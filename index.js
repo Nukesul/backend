@@ -10,14 +10,15 @@ const cors = require('cors'); // Импортируем cors
 require('dotenv').config(); // Для загрузки переменных окружения из .env
 
 const app = express(); // Создание приложения Express
-app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? 'https://boodaikg.com' : 'http://localhost:3000',  // Устанавливаем разрешённые источники
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],  // Разрешённые методы
-    credentials: true,  // Разрешаем использование cookies
-    allowedHeaders: ['DNT', 'X-CustomHeader', 'Keep-Alive', 'User-Agent', 'X-Requested-With', 'If-Modified-Since', 'Cache-Control', 'Content-Type'],  // Разрешённые заголовки
-    preflightContinue: false,  // не передавать управление после preflight запроса
-    optionsSuccessStatus: 204  // Статус для успешного ответа на OPTIONS запросы
-  }));
+//app.use(cors({
+   // origin: process.env.NODE_ENV === 'production' ? 'https://boodaikg.com' : 'http://localhost:3000', // Allow requests from specific origins
+    //methods: ['GET', 'POST', 'PUT', 'DELETE'], // Permitted methods
+    //credentials: true, // Allows credentials (cookies) to be sent
+    //allowedHeaders: ['DNT', 'X-CustomHeader', 'Keep-Alive', 'User-Agent', 'X-Requested-With', 'If-Modified-Since', 'Cache-Control', 'Content-Type'], // Permitted headers
+    //preflightContinue: false, // Don’t pass control after preflight
+    //optionsSuccessStatus: 204 // Respond with 204 status for preflight OPTIONS requests
+  //}));
+  
 app.use(bodyParser.json());
 const secretKey = 'ваш_секретный_ключ'; // Добавьте это перед использованием
 
