@@ -17,6 +17,8 @@ const app = express(); // Создание приложения Express
 const TELEGRAM_BOT = '7858016810:AAELHxlmZORP7iHEIWdqYKw-rHl-q3aB8yY';
 const TELEGRAM_CHAT_ID = '-1002311447135';
 
+
+
   app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -229,6 +231,7 @@ app.delete('/api/products/:id', (req, res) => {
     });
 });
 
+// Определение маршрута /api/send-order
 router.post('/send-order', async (req, res) => {
     const { orderDetails, deliveryDetails, cartItems } = req.body;
   
@@ -251,13 +254,13 @@ router.post('/send-order', async (req, res) => {
     `;
   
     try {
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        chat_id: TELEGRAM_CHAT_ID,
+      await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: process.env.TELEGRAM_CHAT_ID,
         text: orderText,
       });
       res.status(200).json({ message: 'Заказ отправлен в Telegram' });
     } catch (error) {
-      res.status(500).json({ message: 'Ошибка отправки', error });
+      res.status(500).json({ message: 'Ошибка отправки', error: error.message });
     }
   });
 
