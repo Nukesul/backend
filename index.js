@@ -236,12 +236,12 @@ app.delete('/api/products/:id', (req, res) => {
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
 app.get('/api/send-order', async (req, res) => {
-    // Extracting and parsing request query data
+    // 1. Extracting and parsing request query data
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
 
-    // Creating order summary text
+    // 2. Creating the order summary text for Telegram
     const orderText = `
       📦 Новый заказ:
       👤 Имя: ${orderDetails.name || 'Нет'}
@@ -265,14 +265,26 @@ app.get('/api/send-order', async (req, res) => {
     `;
 
     try {
-        // Part 1: Send text message with order summary
+        // 3. Sending the text message with order details to Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
             text: orderText,
         });
 
-        // Part 2: Send each item image with caption in a separate message
-        const imagePromises = cartItems.map(item => {
+        // 4. Filter unique images using Set to avoid duplicates
+        const uniqueImages = new Set();
+        const uniqueItems = cartItems.filter(item => {
+            const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
+            if (uniqueImages.has(imageUrl)) {
+                return false; // Skip duplicate image
+            } else {
+                uniqueImages.add(imageUrl);
+                return true; // Include unique image
+            }
+        });
+
+        // 5. Send each unique item image with caption in a separate message
+        const imagePromises = uniqueItems.map(item => {
             const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
             return axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
                 chat_id: TELEGRAM_CHAT_ID,
@@ -284,18 +296,19 @@ app.get('/api/send-order', async (req, res) => {
         // Wait for all image messages to be sent
         await Promise.all(imagePromises);
 
-        // Respond to the request with success message
-        res.status(200).json({ message: 'Заказ с изображениями отправлен в Telegram' });
+        // 6. Respond to the request with success message
+        res.status(200).json({ message: 'Заказ с уникальными изображениями отправлен в Telegram' });
 
     } catch (error) {
         // Error handling and response
-        console.error("Успешшно отправлено", error.response ? error.response.data : error.message);
+        console.error("Успешно отправлен:", error.response ? error.response.data : error.message);
         res.status(500).json({ 
             //message: 'Ошибка отправки', 
             error: error.response ? error.response.data : error.message 
         });
     }
 });
+
 
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
