@@ -14,8 +14,9 @@ require('dotenv').config(); // Для загрузки переменных ок
 
 const app = express(); // Создание приложения Express
 
-const TELEGRAM_BOT = '7858016810:AAELHxlmZORP7iHEIWdqYKw-rHl-q3aB8yY';
-const TELEGRAM_CHAT_ID = '-1002311447135';
+// Используйте переменные окружения для Telegram
+const TELEGRAM_BOT = process.env.TELEGRAM_BOT;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 
 
