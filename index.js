@@ -259,8 +259,8 @@ app.get('/api/send-order', async (req, res) => {
     `;
   
     try {
-      await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        chat_id: process.env.TELEGRAM_CHAT_ID,
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: TELEGRAM_CHAT_ID,
         text: orderText,
       });
       res.status(200).json({ message: 'Заказ отправлен в Telegram' });
@@ -268,7 +268,6 @@ app.get('/api/send-order', async (req, res) => {
       res.status(500).json({ message: 'Ошибка отправки', error });
     }
   });
-
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
 });
