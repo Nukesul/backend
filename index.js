@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql');
 const multer = require('multer');
 const path = require('path');
+const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser'); // Импортируйте body-parser
 const jwt = require('jsonwebtoken');
@@ -12,6 +13,8 @@ require('dotenv').config(); // Для загрузки переменных ок
 
 const app = express(); // Создание приложения Express
 
+const TELEGRAM_BOT = '7858016810:AAELHxlmZORP7iHEIWdqYKw-rHl-q3aB8yY';
+const TELEGRAM_CHAT_ID = '-1002311447135';
 
   app.use(cors({
     origin: 'https://boodaikg.com',
@@ -224,6 +227,38 @@ app.delete('/api/products/:id', (req, res) => {
         res.json({ message: 'Продукт успешно удален' });
     });
 });
+
+router.post('/send-order', async (req, res) => {
+    const { orderDetails, deliveryDetails, cartItems } = req.body;
+  
+    const orderText = `
+      📦 Новый заказ:
+      👤 Имя: ${orderDetails.name}
+      📞 Телефон: ${orderDetails.phone}
+      📝 Комментарии: ${orderDetails.comments || 'Нет'}
+  
+      📦 Доставка:
+      🚚 Имя: ${deliveryDetails.name}
+      📞 Телефон: ${deliveryDetails.phone}
+      📍 Адрес: ${deliveryDetails.address || 'Нет'}
+      📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
+  
+      🛒 Товары:
+      ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
+  
+      💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
+    `;
+  
+    try {
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: orderText,
+      });
+      res.status(200).json({ message: 'Заказ отправлен в Telegram' });
+    } catch (error) {
+      res.status(500).json({ message: 'Ошибка отправки', error });
+    }
+  });
 
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
