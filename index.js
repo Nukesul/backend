@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser'); // Импортируйте body-parser
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
+const router = express.Router(); // Initialize router
 const crypto = require('crypto');
 const cors = require('cors'); // Импортируем cors
 require('dotenv').config(); // Для загрузки переменных окружения из .env
