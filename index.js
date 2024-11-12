@@ -12,7 +12,7 @@ require('dotenv').config(); // Для загрузки переменных ок
 
 const app = express(); // Создание приложения Express
 
-  const cors = require('cors');
+
   app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
