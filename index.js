@@ -241,6 +241,7 @@ app.get('/api/send-order', async (req, res) => {
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
   
+    // Формирование текста заказа
     const orderText = `
       📦 Новый заказ:
       👤 Имя: ${orderDetails.name || 'Нет'}
@@ -254,22 +255,42 @@ app.get('/api/send-order', async (req, res) => {
       📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
   
       🛒 Товары:
-      ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
+      ${cartItems.map(item => {
+        const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
+        return `${item.name} - ${item.quantity} шт. по ${item.price} сом
+        🖼️ Картинка: ${imageUrl}`;
+      }).join('\n')}
   
       💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
     `;
   
     try {
-      const response = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      // Отправка текста с изображением
+      const promises = cartItems.map(item => {
+        const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
+        return axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+          chat_id: TELEGRAM_CHAT_ID,
+          caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
+          photo: imageUrl,
+        });
+      });
+
+      // Отправляем сначала сообщение с текстом
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         chat_id: TELEGRAM_CHAT_ID,
         text: orderText,
       });
-      res.status(200).json({ message: 'Заказ отправлен в Telegram', telegramResponse: response.data });
+
+      // Отправляем все изображения с товарами
+      await Promise.all(promises);
+
+      res.status(200).json({ message: 'Заказ с изображениями отправлен в Telegram' });
     } catch (error) {
       console.error("Ошибка при отправке:", error.response ? error.response.data : error.message);
       res.status(500).json({ message: 'Ошибка отправки', error: error.response ? error.response.data : error.message });
     }
-  });
+});
+
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
 });
