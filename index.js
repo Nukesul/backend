@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser'); // Импортируйте body-parser
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
+const crypto = require('crypto');
 const cors = require('cors'); // Импортируем cors
 require('dotenv').config(); // Для загрузки переменных окружения из .env
 
@@ -51,11 +52,14 @@ db.connect(async (err) => {
         if (results.length === 0) {
             // Если нет администратора, создаём нового
             const generatedUsername = 'admin'; // Можно сгенерировать случайный логин, если нужно
-            const generatedPassword = require('crypto').randomBytes(8).toString('hex'); // Генерация случайного пароля
+            const generatedPassword = crypto.randomBytes(8).toString('hex'); // Генерация случайного пароля
             const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
-            const insertAdminQuery = 'INSERT INTO users (username, email, password, role, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?)';
-            db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, '1234567890', 'DefaultCountry', 'male'], (error) => {
+            // Генерация токена
+            const generatedToken = crypto.randomBytes(32).toString('hex'); // Генерация случайного токена
+
+            const insertAdminQuery = 'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
+            db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, generatedToken, '1234567890', 'DefaultCountry', 'male'], (error) => {
                 if (error) {
                     console.error('Ошибка при создании администратора:', error);
                     return;
