@@ -10,14 +10,7 @@ const cors = require('cors'); // Импортируем cors
 require('dotenv').config(); // Для загрузки переменных окружения из .env
 
 const app = express(); // Создание приложения Express
-//app.use(cors({
-   // origin: process.env.NODE_ENV === 'production' ? 'https://boodaikg.com' : 'http://localhost:3000', // Allow requests from specific origins
-    //methods: ['GET', 'POST', 'PUT', 'DELETE'], // Permitted methods
-    //credentials: true, // Allows credentials (cookies) to be sent
-    //allowedHeaders: ['DNT', 'X-CustomHeader', 'Keep-Alive', 'User-Agent', 'X-Requested-With', 'If-Modified-Since', 'Cache-Control', 'Content-Type'], // Permitted headers
-    //preflightContinue: false, // Don’t pass control after preflight
-    //optionsSuccessStatus: 204 // Respond with 204 status for preflight OPTIONS requests
-  //}));
+
   const cors = require('cors');
   app.use(cors({
     origin: 'https://boodaikg.com',
