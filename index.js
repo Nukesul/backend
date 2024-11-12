@@ -242,13 +242,13 @@ app.get('/api/send-order', async (req, res) => {
   
     const orderText = `
       📦 Новый заказ:
-      👤 Имя: ${orderDetails.name}
-      📞 Телефон: ${orderDetails.phone}
+      👤 Имя: ${orderDetails.name || 'Нет'}
+      📞 Телефон: ${orderDetails.phone || 'Нет'}
       📝 Комментарии: ${orderDetails.comments || 'Нет'}
   
       📦 Доставка:
-      🚚 Имя: ${deliveryDetails.name}
-      📞 Телефон: ${deliveryDetails.phone}
+      🚚 Имя: ${deliveryDetails.name || 'Нет'}
+      📞 Телефон: ${deliveryDetails.phone || 'Нет'}
       📍 Адрес: ${deliveryDetails.address || 'Нет'}
       📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
   
@@ -259,13 +259,14 @@ app.get('/api/send-order', async (req, res) => {
     `;
   
     try {
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const response = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         chat_id: TELEGRAM_CHAT_ID,
         text: orderText,
       });
-      res.status(200).json({ message: 'Заказ отправлен в Telegram' });
+      res.status(200).json({ message: 'Заказ отправлен в Telegram', telegramResponse: response.data });
     } catch (error) {
-      res.status(500).json({ message: 'Ошибка отправки', error });
+      console.error("Ошибка при отправке:", error.response ? error.response.data : error.message);
+      res.status(500).json({ message: 'Ошибка отправки', error: error.response ? error.response.data : error.message });
     }
   });
 app.listen(5000, () => {
