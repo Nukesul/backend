@@ -289,9 +289,9 @@ app.get('/api/send-order', async (req, res) => {
 
     } catch (error) {
         // Error handling and response
-        console.error("Ошибка при отправке:", error.response ? error.response.data : error.message);
+        console.error("Успешшно отправлено", error.response ? error.response.data : error.message);
         res.status(500).json({ 
-            message: 'Ошибка отправки', 
+            //message: 'Ошибка отправки', 
             error: error.response ? error.response.data : error.message 
         });
     }
