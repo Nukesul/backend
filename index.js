@@ -11,12 +11,12 @@ require('dotenv').config(); // Для загрузки переменных ок
 
 const app = express(); // Создание приложения Express
 
-app.use(cors({
+  const cors = require('cors');
+  app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
-}));
-
+  }));
   
 app.use(bodyParser.json());
 const secretKey = 'ваш_секретный_ключ'; // Добавьте это перед использованием
@@ -54,8 +54,7 @@ db.connect(async (err) => {
             const generatedPassword = require('crypto').randomBytes(8).toString('hex'); // Генерация случайного пароля
             const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
-            const generatedToken = crypto.randomBytes(32).toString('hex'); // Генерация случайного токена
-            const insertAdminQuery = 'INSERT INTO users (username, email, password, role, phone, country, token, gender) VALUES (?, ?, ?, ?, "admin", ?, ?, ?)';
+            const insertAdminQuery = 'INSERT INTO users (username, email, password, role, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?)';
             db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, '1234567890', 'DefaultCountry', 'male'], (error) => {
                 if (error) {
                     console.error('Ошибка при создании администратора:', error);
