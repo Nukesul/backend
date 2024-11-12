@@ -18,7 +18,14 @@ const app = express(); // Создание приложения Express
     //preflightContinue: false, // Don’t pass control after preflight
     //optionsSuccessStatus: 204 // Respond with 204 status for preflight OPTIONS requests
   //}));
-  
+  const cors = require('cors');
+
+app.use(cors({
+  origin: 'https://boodaikg.com',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
+
 app.use(bodyParser.json());
 const secretKey = 'ваш_секретный_ключ'; // Добавьте это перед использованием
 
