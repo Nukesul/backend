@@ -11,12 +11,12 @@ require('dotenv').config(); // Для загрузки переменных ок
 
 const app = express(); // Создание приложения Express
 
-  const cors = require('cors');
-  app.use(cors({
+app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
-  }));
+}));
+
   
 app.use(bodyParser.json());
 const secretKey = 'ваш_секретный_ключ'; // Добавьте это перед использованием
