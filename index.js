@@ -236,58 +236,64 @@ app.delete('/api/products/:id', (req, res) => {
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
 app.get('/api/send-order', async (req, res) => {
-    // Извлечение и парсинг данных из строки запроса
+    // Extracting and parsing request query data
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
-  
-    // Формирование текста заказа
+
+    // Creating order summary text
     const orderText = `
       📦 Новый заказ:
       👤 Имя: ${orderDetails.name || 'Нет'}
       📞 Телефон: ${orderDetails.phone || 'Нет'}
       📝 Комментарии: ${orderDetails.comments || 'Нет'}
-  
+      
       📦 Доставка:
       🚚 Имя: ${deliveryDetails.name || 'Нет'}
       📞 Телефон: ${deliveryDetails.phone || 'Нет'}
       📍 Адрес: ${deliveryDetails.address || 'Нет'}
       📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
-  
+
       🛒 Товары:
       ${cartItems.map(item => {
         const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
         return `${item.name} - ${item.quantity} шт. по ${item.price} сом
         🖼️ Картинка: ${imageUrl}`;
       }).join('\n')}
-  
+
       💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
     `;
-  
+
     try {
-      // Отправка текста с изображением
-      const promises = cartItems.map(item => {
-        const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
-        return axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-          chat_id: TELEGRAM_CHAT_ID,
-          caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
-          photo: imageUrl,
+        // Part 1: Send text message with order summary
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: orderText,
         });
-      });
 
-      // Отправляем сначала сообщение с текстом
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        chat_id: TELEGRAM_CHAT_ID,
-        text: orderText,
-      });
+        // Part 2: Send each item image with caption in a separate message
+        const imagePromises = cartItems.map(item => {
+            const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
+            return axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+                chat_id: TELEGRAM_CHAT_ID,
+                caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
+                photo: imageUrl,
+            });
+        });
 
-      // Отправляем все изображения с товарами
-      await Promise.all(promises);
+        // Wait for all image messages to be sent
+        await Promise.all(imagePromises);
 
-      res.status(200).json({ message: 'Заказ с изображениями отправлен в Telegram' });
+        // Respond to the request with success message
+        res.status(200).json({ message: 'Заказ с изображениями отправлен в Telegram' });
+
     } catch (error) {
-      console.error("Ошибка при отправке:", error.response ? error.response.data : error.message);
-      res.status(500).json({ message: 'Ошибка отправки', error: error.response ? error.response.data : error.message });
+        // Error handling and response
+        console.error("Ошибка при отправке:", error.response ? error.response.data : error.message);
+        res.status(500).json({ 
+            message: 'Ошибка отправки', 
+            error: error.response ? error.response.data : error.message 
+        });
     }
 });
 
