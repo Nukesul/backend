@@ -232,8 +232,12 @@ app.delete('/api/products/:id', (req, res) => {
 });
 
 // Определение маршрута /api/send-order
-router.post('/send-order', async (req, res) => {
-    const { orderDetails, deliveryDetails, cartItems } = req.body;
+// Настройка маршрута для GET
+app.get('/api/send-order', async (req, res) => {
+    // Извлечение и парсинг данных из строки запроса
+    const orderDetails = JSON.parse(req.query.orderDetails);
+    const deliveryDetails = JSON.parse(req.query.deliveryDetails);
+    const cartItems = JSON.parse(req.query.cartItems);
   
     const orderText = `
       📦 Новый заказ:
@@ -260,7 +264,7 @@ router.post('/send-order', async (req, res) => {
       });
       res.status(200).json({ message: 'Заказ отправлен в Telegram' });
     } catch (error) {
-      res.status(500).json({ message: 'Ошибка отправки', error: error.message });
+      res.status(500).json({ message: 'Ошибка отправки', error });
     }
   });
 
