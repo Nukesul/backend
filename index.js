@@ -2,7 +2,7 @@ const express = require('express');
 const mysql = require('mysql');
 const multer = require('multer');
 const path = require('path');
-const axios = require('axios');
+const axios = require('axios'); // Оставьте это объявление только один раз
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser'); // Импортируйте body-parser
 const jwt = require('jsonwebtoken');
@@ -13,6 +13,7 @@ const cors = require('cors'); // Импортируем cors
 require('dotenv').config(); // Для загрузки переменных окружения из .env
 
 const app = express(); // Создание приложения Express
+
 
 // Используйте переменные окружения для Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT; // Correctly accessing the token
@@ -235,13 +236,13 @@ app.delete('/api/products/:id', (req, res) => {
 
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
+
+
 app.get('/api/send-order', async (req, res) => {
-    // 1. Extracting and parsing request query data
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
 
-    // 2. Creating the order summary text for Telegram
     const orderText = `
       📦 Новый заказ:
       👤 Имя: ${orderDetails.name || 'Нет'}
@@ -265,45 +266,44 @@ app.get('/api/send-order', async (req, res) => {
     `;
 
     try {
-        // 3. Sending the text message with order details to Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
             text: orderText,
         });
 
-        // 4. Filter unique images using Set to avoid duplicates
         const uniqueImages = new Set();
         const uniqueItems = cartItems.filter(item => {
             const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
             if (uniqueImages.has(imageUrl)) {
-                return false; // Skip duplicate image
+                return false;
             } else {
                 uniqueImages.add(imageUrl);
-                return true; // Include unique image
+                return true;
             }
         });
 
-        // 5. Send each unique item image with caption in a separate message
-        const imagePromises = uniqueItems.map(item => {
+        const imagePromises = uniqueItems.map(async (item) => {
             const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
-            return axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-                chat_id: TELEGRAM_CHAT_ID,
-                caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
-                photo: imageUrl,
-            });
+            try {
+                return await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+                    chat_id: TELEGRAM_CHAT_ID,
+                    caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
+                    photo: imageUrl,
+                });
+            } catch (error) {
+                console.error(`Ошибка отправки фото ${item.name}:`, error.response ? error.response.data : error.message);
+                throw error; // Keep errors in the promises chain
+            }
         });
 
-        // Wait for all image messages to be sent
         await Promise.all(imagePromises);
 
-        // 6. Respond to the request with success message
         res.status(200).json({ message: 'Заказ с уникальными изображениями отправлен в Telegram' });
 
     } catch (error) {
-        // Error handling and response
-        console.error("Успешно отправлен:", error.response ? error.response.data : error.message);
+        console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
         res.status(500).json({ 
-            //message: 'Ошибка отправки', 
+            message: 'Ошибка отправки заказа',
             error: error.response ? error.response.data : error.message 
         });
     }
