@@ -237,7 +237,6 @@ app.delete('/api/products/:id', (req, res) => {
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
 
-
 app.get('/api/send-order', async (req, res) => {
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
@@ -256,11 +255,7 @@ app.get('/api/send-order', async (req, res) => {
       📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
 
       🛒 Товары:
-      ${cartItems.map(item => {
-        const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
-        return `${item.name} - ${item.quantity} шт. по ${item.price} сом
-        🖼️ Картинка: ${imageUrl}`;
-      }).join('\n')}
+      ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
 
       💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
     `;
@@ -271,34 +266,7 @@ app.get('/api/send-order', async (req, res) => {
             text: orderText,
         });
 
-        const uniqueImages = new Set();
-        const uniqueItems = cartItems.filter(item => {
-            const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
-            if (uniqueImages.has(imageUrl)) {
-                return false;
-            } else {
-                uniqueImages.add(imageUrl);
-                return true;
-            }
-        });
-
-        const imagePromises = uniqueItems.map(async (item) => {
-            const imageUrl = `https://nukesul-backend-1bde.twc1.net${item.image}`;
-            try {
-                return await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-                    chat_id: TELEGRAM_CHAT_ID,
-                    caption: `${item.name} - ${item.quantity} шт. по ${item.price} сом`,
-                    photo: imageUrl,
-                });
-            } catch (error) {
-                console.error(`Ошибка отправки фото ${item.name}:`, error.response ? error.response.data : error.message);
-                throw error; // Keep errors in the promises chain
-            }
-        });
-
-        await Promise.all(imagePromises);
-
-        res.status(200).json({ message: 'Заказ с уникальными изображениями отправлен в Telegram' });
+        res.status(200).json({ message: 'Заказ отправлен в Telegram' });
 
     } catch (error) {
         console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
@@ -308,7 +276,6 @@ app.get('/api/send-order', async (req, res) => {
         });
     }
 });
-
 
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
