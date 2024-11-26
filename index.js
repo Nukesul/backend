@@ -20,13 +20,20 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT; // Correctly accessing the 
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 
+// Данные для моков (mockData)
+const mockData = {
+    cartItems: [
+      { id: 1, name: "Pizza Margherita", quantity: 2, price: 10 },
+      { id: 2, name: "Pizza Pepperoni", quantity: 1, price: 12 },
+    ],
+  };
 
-
-  app.use(cors({
+ app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }));
+  
   
 app.use(bodyParser.json());
 const secretKey = 'ваш_секретный_ключ'; // Добавьте это перед использованием
@@ -98,38 +105,35 @@ const upload = multer({ storage });
 app.post('/api/products', upload.single('image'), (req, res) => {
     const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-
-    // Log incoming data to verify it's received correctly
-    console.log('Received data on server:', { name, description, category, subCategory, imageUrl });
-
-    // Check for required fields
+  
     if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно' });
     if (!category) return res.status(400).json({ error: 'Категория обязательна' });
-
+  
     const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
     const productValues = [name, description, category, subCategory, imageUrl];
-
+  
     db.beginTransaction((err) => {
-        if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
-
-        db.query(productSql, productValues, (err, result) => {
-            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
-
-            const productId = result.insertId;
-            const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-            const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
-
-            db.query(priceSql, priceValues, (err) => {
-                if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
-
-                db.commit((err) => {
-                    if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-                    res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
-                });
-            });
+      if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+  
+      db.query(productSql, productValues, (err, result) => {
+        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+  
+        const productId = result.insertId;
+        const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
+        const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
+  
+        db.query(priceSql, priceValues, (err) => {
+          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+  
+          db.commit((err) => {
+            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+            res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
+          });
         });
+      });
     });
-});
+  });
+  
 
 
   app.get('/api/products', (req, res) => {
@@ -277,6 +281,113 @@ app.get('/api/send-order', async (req, res) => {
     }
 });
 
+// Эндпоинт /api/data
+app.get('/api/data', (req, res) => {
+    const sql = `
+        SELECT 
+            products.id,
+            products.name,
+            products.description,
+            products.category,
+            products.image_url,
+            prices.price_small,
+            prices.price_medium,
+            prices.price_large,
+            prices.price
+        FROM 
+            products
+        LEFT JOIN 
+            prices ON products.id = prices.product_id
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) {
+            console.error('Ошибка при запросе данных:', err.message); // Лог ошибки
+            return res.status(500).json({ error: 'Ошибка при получении данных' });
+        }
+
+        res.json(results); // Возвращаем данные из базы
+    });
+});
+
+
+// Обновление продукта
+app.put('/api/products/:id', upload.single('image'), (req, res) => {
+    const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const productId = req.params.id;
+  
+    const productSql = `
+      UPDATE products 
+      SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url) 
+      WHERE id = ?
+    `;
+    const productValues = [name, description, category, subCategory, imageUrl, productId];
+  
+    db.beginTransaction((err) => {
+      if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+  
+      db.query(productSql, productValues, (err, result) => {
+        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при обновлении продукта' }));
+  
+        const priceSql = `
+          UPDATE prices 
+          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
+          WHERE product_id = ?
+        `;
+        const priceValues = [priceSmall, priceMedium, priceLarge, price, productId];
+  
+        db.query(priceSql, priceValues, (err) => {
+          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при обновлении цен' }));
+  
+          db.commit((err) => {
+            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+            res.status(200).json({ message: 'Продукт и цены успешно обновлены!' });
+          });
+        });
+      });
+    });
+  });
+  
+
+  app.get('/api/products/:id', (req, res) => {
+    const productId = req.params.id;
+  
+    const sql = `
+      SELECT 
+        products.id,
+        products.name,
+        products.description,
+        products.category,
+        products.sub_category AS subCategory,
+        products.image_url,
+        prices.price_small AS priceSmall,
+        prices.price_medium AS priceMedium,
+        prices.price_large AS priceLarge,
+        prices.price
+      FROM 
+        products
+      LEFT JOIN 
+        prices ON products.id = prices.product_id
+      WHERE 
+        products.id = ?
+    `;
+  
+    db.query(sql, [productId], (err, results) => {
+      if (err) {
+        console.error('Ошибка при запросе продукта:', err.message);
+        return res.status(500).json({ error: 'Ошибка при получении продукта' });
+      }
+  
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'Продукт не найден' });
+      }
+  
+      res.json(results[0]);
+    });
+  });
+  
+  
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
 });
