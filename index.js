@@ -28,7 +28,7 @@ const mockData = {
     ],
   };
 
- app.use(cors({
+app.use(cors({
     origin: 'https://boodaikg.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
@@ -387,6 +387,177 @@ app.put('/api/products/:id', upload.single('image'), (req, res) => {
     });
   });
   
+
+  // API для регистрации пользователя
+  app.post('/api/register', async (req, res) => {
+    const { firstName, lastName, phone, email, password } = req.body;
+
+    if (!firstName || !lastName || !phone || !email || !password) {
+        return res.status(400).json({ message: 'Заполните все поля' });
+    }
+
+    try {
+        // Проверка существующего пользователя
+        const [existingUser] = await new Promise((resolve, reject) => {
+            db.query(
+                'SELECT * FROM userskg WHERE email = ? OR phone = ?',
+                [email, phone],
+                (err, results) => (err ? reject(err) : resolve(results))
+            );
+        });
+
+        if (existingUser) {
+            return res.status(400).json({ message: 'Пользователь с таким email или телефоном уже существует' });
+        }
+
+        // Хэширование пароля
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        // Сохранение нового пользователя и получение его user_id
+        const userId = await new Promise((resolve, reject) => {
+            db.query(
+                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
+                [firstName, lastName, phone, email, passwordHash],
+                (err, results) => (err ? reject(err) : resolve(results.insertId))
+            );
+        });
+
+        const token = jwt.sign(
+            { user_id: userId, email, phone }, // Данные, которые включаются в токен
+            process.env.JWT_SECRET, // Секретный ключ из .env
+            { expiresIn: '7d' } // Время жизни токена
+        );
+        
+        // Сохранение токена в базе данных
+        await new Promise((resolve, reject) => {
+            db.query(
+                'UPDATE userskg SET token = ? WHERE user_id = ?',
+                [token, userId],
+                (err) => (err ? reject(err) : resolve())
+            );
+        });
+
+        // Успешный ответ
+        res.status(201).json({
+            message: 'Пользователь успешно зарегистрирован',
+            token,
+        });
+    } catch (error) {
+        console.error('Ошибка при регистрации пользователя:', error);
+        res.status(500).json({ message: 'Ошибка сервера' });
+    }
+});
+// API для получения информации о пользователе
+// Защищенный маршрут для получения информации о пользователе
+app.get('/api/user', (req, res) => {
+    // Извлечение токена из заголовка Authorization
+    const token = req.headers['authorization']?.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Необходим токен для доступа к этому ресурсу' });
+    }
+
+    // Проверка токена
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(403).json({ message: 'Неверный токен' });
+        }
+
+        // SQL-запрос для получения данных пользователя
+        const sql = `
+        SELECT 
+            user_id, 
+            first_name AS username, 
+            email, 
+            phone, 
+            balance 
+        FROM userskg 
+        WHERE user_id = ?
+    `;
+    
+        db.query(sql, [decoded.user_id], (error, results) => {
+            if (error) {
+                console.error('Ошибка запроса к базе данных:', error);
+                return res.status(500).json({ message: 'Ошибка сервера' });
+            }
+
+            if (results.length === 0) {
+                return res.status(404).json({ message: 'Пользователь не найден' });
+            }
+
+            // Возврат данных пользователя
+            const user = results[0];
+            res.json({
+                user_id: user.user_id,
+                username: user.username,
+                email: user.email,
+                phone: user.phone,
+                balance: user.balance,
+            });
+        });
+    });
+});
+// API для входа пользователя
+app.post('/api/login', (req, res) => {
+    const { email, password } = req.body;
+
+    // Проверка на наличие обязательных полей
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Пожалуйста, введите email и пароль!' });
+    }
+
+    const sql = 'SELECT * FROM userskg WHERE email = ?';
+    db.query(sql, [email], async (error, results) => {
+        if (error) {
+            console.error('Ошибка базы данных:', error);
+            return res.status(500).json({ message: 'Ошибка сервера' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Пользователь не найден!' });
+        }
+
+        const user = results[0];
+
+        // Проверка наличия хэшированного пароля
+        if (!user.password_hash) {
+            console.error('Пароль отсутствует в базе данных для пользователя с email:', email);
+            return res.status(500).json({ message: 'Ошибка сервера: пароль не найден.' });
+        }
+
+        try {
+            // Сравнение паролей
+            const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
+
+            if (!isPasswordMatch) {
+                return res.status(400).json({ message: 'Неверный пароль!' });
+            }
+
+            // Если токен уже существует в базе данных, возвращаем его
+            if (user.token) {
+                return res.json({ message: 'Вход успешен', token: user.token, userId: user.user_id });
+            }
+
+            // Если токена нет, создаем новый, сохраняем и возвращаем
+            const token = jwt.sign({ user_id: user.user_id }, secretKey, { expiresIn: '1h' });
+
+            const updateTokenQuery = 'UPDATE userskg SET token = ? WHERE user_id = ?';
+            db.query(updateTokenQuery, [token, user.user_id], (error) => {
+                if (error) {
+                    console.error('Ошибка при сохранении токена:', error);
+                    return res.status(500).json({ message: 'Ошибка при сохранении токена' });
+                }
+
+                res.json({ message: 'Вход успешен', token, userId: user.user_id });
+            });
+        } catch (err) {
+            console.error('Ошибка при сравнении пароля:', err);
+            return res.status(500).json({ message: 'Ошибка сервера при проверке пароля.' });
+        }
+    });
+});
+
+
   
 app.listen(5000, () => {
     console.log('Сервер запущен на порту 5000');
