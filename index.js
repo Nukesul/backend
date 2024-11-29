@@ -717,6 +717,7 @@ function generatePromoCode() {
 
 // Маршрут для обновления и отправки промокода пользователю
 // Маршрут для получения или генерации промокода
+// Обработчик для генерации промокода
 app.post('/api/users/:user_id/promo', (req, res) => {
     const userId = parseInt(req.params.user_id, 10);
 
@@ -767,8 +768,8 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                     const transporter = nodemailer.createTransport({
                         service: 'gmail',
                         auth: {
-                            user: 'vorlodgamess@gmail.com', // Укажите свой email
-                            pass: 'hpmjnrjmaedrylve', // Пароль приложения Google
+                            user: 'vorlodgamess@gmail.com',
+                            pass: 'hpmjnrjmaedrylve',
                         },
                     });
 
@@ -844,53 +845,46 @@ app.post('/api/users/:user_id/promo', (req, res) => {
     );
 });
 
-
-// API для проверки промокода (одноразовое использование)
+// API для проверки промокода
 app.post('/api/validate-promo', (req, res) => {
     const { promoCode } = req.body;
-  
+
     console.log("Получен промокод:", promoCode); // Логируем промокод
-  
+
     if (!promoCode) {
         return res.status(400).json({ message: 'Промокод не может быть пустым.' });
     }
-  
-    const query = 'SELECT * FROM userskg WHERE promo_code = ?';
+
+    const query = 'SELECT * FROM userskg WHERE promo_code = ? AND promo_code_used = false';
     db.query(query, [promoCode], (err, results) => {
         if (err) {
             console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
             return res.status(500).json({ message: 'Ошибка сервера', error: err });
         }
-  
+
         if (results.length === 0) {
-            return res.status(400).json({ message: 'Неверный промокод.' });
+            return res.status(400).json({ message: 'Неверный или уже использованный промокод.' });
         }
-  
+
         const promoCodeDetails = results[0];
         const currentDate = new Date();
         const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
-  
+
         // Проверяем срок действия промокода
         const expiryDate = new Date(promoCodeCreatedAt.getTime() + 24 * 60 * 60 * 1000); // 24 часа с момента создания
+
         if (currentDate > expiryDate) {
             return res.status(400).json({ message: 'Промокод истек.' });
         }
-  
-        // Проверяем, был ли промокод уже использован
-        if (promoCodeDetails.promo_code_used) {
-            return res.status(400).json({ message: 'Промокод уже использован.' });
-        }
-  
-        // Помечаем промокод как использованный
-        const updateQuery = 'UPDATE userskg SET promo_code_used = true WHERE promo_code = ?';
-        db.query(updateQuery, [promoCode], (updateErr) => {
+
+        // Обновляем статус промокода на "использован"
+        db.query('UPDATE userskg SET promo_code_used = true WHERE promo_code = ?', [promoCode], (updateErr) => {
             if (updateErr) {
-                console.error("Ошибка при обновлении статуса промокода:", updateErr);
-                return res.status(500).json({ message: 'Ошибка сервера при обновлении промокода.' });
+                console.error('Ошибка при обновлении статуса промокода:', updateErr);
+                return res.status(500).json({ message: 'Ошибка сервера' });
             }
-  
-            // Промокод успешно использован
-            res.json({ discount: 0.1, message: 'Промокод успешно применен.' });
+
+            res.json({ message: 'Промокод успешно применен', discount: 0.1 });
         });
     });
 });
