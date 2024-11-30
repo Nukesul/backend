@@ -586,7 +586,6 @@ app.post('/api/resend-code', async (req, res) => {
     const { email } = req.body;
 
     try {
-        // Получаем пользователя из временной таблицы
         const [tempUser] = await new Promise((resolve, reject) => {
             db.query(
                 'SELECT * FROM temp_users WHERE email = ?',
@@ -595,19 +594,17 @@ app.post('/api/resend-code', async (req, res) => {
             );
         });
 
-        console.log('Найден пользователь:', tempUser);  // Логируем найденного пользователя
-
         if (!tempUser) {
             return res.status(400).json({ message: 'Код не найден. Попробуйте запросить новый код.' });
         }
 
-        // Проверка, прошло ли 60 секунд с последней отправки
+        // Проверка времени
         const lastSentAt = new Date(tempUser.last_sent_at);
         const now = new Date();
-        const diffInSeconds = (now - lastSentAt) / 1000; // Разница в секундах
+        const diffInSeconds = (now - lastSentAt) / 1000;
 
         if (diffInSeconds < 60) {
-            return res.status(400).json({ message: 'Пожалуйста, подождите 60 секунд перед повторной отправкой кода.' });
+            return res.status(400).json({ message: `Пожалуйста, подождите ${60 - Math.floor(diffInSeconds)} секунд перед повторной отправкой кода.` });
         }
 
         // Обновляем время последней отправки
@@ -619,8 +616,8 @@ app.post('/api/resend-code', async (req, res) => {
             );
         });
 
-        // Повторная отправка кода
-        await sendConfirmationCode(email, tempUser.confirmation_code); // Используем старый код
+        // Отправка кода
+        await sendConfirmationCode(email, tempUser.confirmation_code);
 
         res.status(200).json({ message: 'Код повторно отправлен!' });
     } catch (error) {
@@ -628,6 +625,7 @@ app.post('/api/resend-code', async (req, res) => {
         res.status(500).json({ message: 'Ошибка сервера при повторной отправке кода' });
     }
 });
+
 
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
