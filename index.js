@@ -387,8 +387,7 @@ app.put('/api/products/:id', upload.single('image'), (req, res) => {
     });
   });
   
-
-  // Регистрация пользователя
+// Регистрация пользователя
 app.post('/api/register', async (req, res) => {
     const { firstName, lastName, phone, email, password } = req.body;
 
@@ -410,113 +409,35 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ message: 'Пользователь с таким email или телефоном уже существует' });
         }
 
-        // Хэширование пароля
-        const passwordHash = await bcrypt.hash(password, 10);
-
-        // Сохранение нового пользователя
-        const userId = await new Promise((resolve, reject) => {
-            db.query(
-                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
-                [firstName, lastName, phone, email, passwordHash],
-                (err, results) => (err ? reject(err) : resolve(results.insertId))
-            );
-        });
-
-        // Генерация токена
-        const token = jwt.sign(
-            { user_id: userId, email, phone },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        // Сохранение токена в базе данных
-        await new Promise((resolve, reject) => {
-            db.query(
-                'UPDATE userskg SET token = ? WHERE user_id = ?',
-                [token, userId],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
-
-        // Генерация и сохранение кода подтверждения
+        // Генерация кода подтверждения
         const confirmationCode = Math.floor(100000 + Math.random() * 900000);
+
+        // Сохранение временных данных
         await new Promise((resolve, reject) => {
             db.query(
-                'UPDATE userskg SET confirmation_code = ? WHERE user_id = ?',
-                [confirmationCode, userId],
+                'INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)',
+                [firstName, lastName, phone, email, await bcrypt.hash(password, 10), confirmationCode],
                 (err) => (err ? reject(err) : resolve())
             );
         });
 
         // Отправка кода подтверждения на email
-       // Отправка кода подтверждения на email
-const transporter = nodemailer.createTransport({
-    service: 'gmail', // Сервис почты
-    auth: {
-        user: process.env.EMAIL_USER, // Email отправителя
-        pass: process.env.EMAIL_PASS, // Пароль приложения
-    },
-});
-
-await transporter.sendMail({
-    from: `"Boodai Pizza" <${process.env.EMAIL_USER}>`, // Отображаемое имя
-    to: email, // Email получателя
-    subject: 'Подтверждение регистрации', // Тема письма
-    html: `
-        <div style="
-            font-family: Arial, sans-serif; 
-            max-width: 600px; 
-            margin: 0 auto; 
-            border: 2px solid #f4a261; 
-            border-radius: 10px; 
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        ">
-            <header style="
-                background-color: #f4a261; 
-                color: #fff; 
-                text-align: center; 
-                padding: 20px;
-            ">
-                <h1 style="margin: 0; font-size: 24px;">Добро пожаловать в Boodai Pizza!</h1>
-            </header>
-            <main style="background-color: #fff; padding: 20px; color: #333;">
-                <p style="font-size: 18px;">Здравствуйте, <b>${firstName}!</b></p>
-                <p style="font-size: 16px;">Спасибо за регистрацию в <b>Boodai Pizza</b>. Чтобы подтвердить свой аккаунт, используйте следующий код:</p>
-                <div style="
-                    text-align: center; 
-                    margin: 20px 0; 
-                    padding: 15px; 
-                    background-color: #2a9d8f; 
-                    color: #fff; 
-                    font-size: 22px; 
-                    font-weight: bold; 
-                    border-radius: 8px;
-                    display: inline-block;
-                ">
-                    ${confirmationCode}
-                </div>
-                <p style="font-size: 16px;">Введите этот код на нашем сайте, чтобы завершить процесс регистрации.</p>
-                <p style="font-size: 14px; color: #777;">Если вы не запрашивали регистрацию, пожалуйста, проигнорируйте это сообщение.</p>
-            </main>
-            <footer style="
-                background-color: #264653; 
-                color: #fff; 
-                text-align: center; 
-                padding: 10px; 
-                font-size: 14px;
-            ">
-                <p style="margin: 0;">С любовью, команда Boodai Pizza 🍕</p>
-            </footer>
-        </div>
-    `,
-});
-
-
-        res.status(201).json({
-            message: 'Пользователь успешно зарегистрирован. Код подтверждения отправлен на почту.',
-            token,
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
         });
+
+        await transporter.sendMail({
+            from: `"Boodai Pizza" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Подтверждение регистрации',
+            html: `<p>Ваш код подтверждения: <b>${confirmationCode}</b></p>`,
+        });
+
+        res.status(201).json({ message: 'Код подтверждения отправлен на почту.' });
     } catch (error) {
         console.error('Ошибка при регистрации пользователя:', error);
         res.status(500).json({ message: 'Ошибка сервера' });
@@ -528,23 +449,39 @@ app.post('/api/confirm-code', async (req, res) => {
     const { code } = req.body;
 
     try {
-        const [user] = await new Promise((resolve, reject) => {
+        // Проверка кода в temp_users
+        const [tempUser] = await new Promise((resolve, reject) => {
             db.query(
-                'SELECT * FROM userskg WHERE confirmation_code = ?',
+                'SELECT * FROM temp_users WHERE confirmation_code = ?',
                 [code],
                 (err, results) => (err ? reject(err) : resolve(results))
             );
         });
 
-        if (!user) {
+        if (!tempUser) {
             return res.status(400).json({ message: 'Неверный код подтверждения' });
         }
 
-        // Подтверждение пользователя
+        // Перенос пользователя в основную таблицу
+        const userId = await new Promise((resolve, reject) => {
+            db.query(
+                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
+                [
+                    tempUser.first_name,
+                    tempUser.last_name,
+                    tempUser.phone,
+                    tempUser.email,
+                    tempUser.password_hash,
+                ],
+                (err, results) => (err ? reject(err) : resolve(results.insertId))
+            );
+        });
+
+        // Удаление временных данных
         await new Promise((resolve, reject) => {
             db.query(
-                'UPDATE userskg SET is_confirmed = 1 WHERE user_id = ?',
-                [user.user_id],
+                'DELETE FROM temp_users WHERE confirmation_code = ?',
+                [code],
                 (err) => (err ? reject(err) : resolve())
             );
         });
@@ -555,6 +492,7 @@ app.post('/api/confirm-code', async (req, res) => {
         res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
+
 
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
