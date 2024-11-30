@@ -522,7 +522,6 @@ app.post('/api/register', async (req, res) => {
         res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
-
 // Подтверждение кода
 app.post('/api/confirm-code', async (req, res) => {
     const { code } = req.body;
@@ -565,56 +564,19 @@ app.post('/api/confirm-code', async (req, res) => {
             );
         });
 
-        res.status(200).json({ message: 'Подтверждение успешно!' });
-    } catch (error) {
-        console.error('Ошибка при подтверждении кода:', error);
-        res.status(500).json({ message: 'Ошибка сервера' });
-    }
-});
+        // Создание JWT токена
+        const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-// Подтверждение кода
-app.post('/api/confirm-code', async (req, res) => {
-    const { code } = req.body;
-
-    try {
-        // Проверка кода в temp_users
-        const [tempUser] = await new Promise((resolve, reject) => {
-            db.query(
-                'SELECT * FROM temp_users WHERE confirmation_code = ?',
-                [code],
-                (err, results) => (err ? reject(err) : resolve(results))
-            );
-        });
-
-        if (!tempUser) {
-            return res.status(400).json({ message: 'Неверный код подтверждения' });
-        }
-
-        // Перенос пользователя в основную таблицу
-        const userId = await new Promise((resolve, reject) => {
-            db.query(
-                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
-                [
-                    tempUser.first_name,
-                    tempUser.last_name,
-                    tempUser.phone,
-                    tempUser.email,
-                    tempUser.password_hash,
-                ],
-                (err, results) => (err ? reject(err) : resolve(results.insertId))
-            );
-        });
-
-        // Удаление временных данных
+        // Сохранение токена в базу данных (если нужно)
         await new Promise((resolve, reject) => {
             db.query(
-                'DELETE FROM temp_users WHERE confirmation_code = ?',
-                [code],
+                'UPDATE userskg SET token = ? WHERE user_id = ?',
+                [token, userId],
                 (err) => (err ? reject(err) : resolve())
             );
         });
 
-        res.status(200).json({ message: 'Подтверждение успешно!' });
+        res.status(200).json({ message: 'Подтверждение успешно!', token });
     } catch (error) {
         console.error('Ошибка при подтверждении кода:', error);
         res.status(500).json({ message: 'Ошибка сервера' });
