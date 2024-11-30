@@ -387,6 +387,7 @@ app.put('/api/products/:id', upload.single('image'), (req, res) => {
     });
   });
   
+
 // Регистрация пользователя
 app.post('/api/register', async (req, res) => {
     const { firstName, lastName, phone, email, password } = req.body;
@@ -412,11 +413,14 @@ app.post('/api/register', async (req, res) => {
         // Генерация кода подтверждения
         const confirmationCode = Math.floor(100000 + Math.random() * 900000);
 
+        // Хэширование пароля
+        const hashedPassword = await bcrypt.hash(password, 10);
+
         // Сохранение временных данных
         await new Promise((resolve, reject) => {
             db.query(
                 'INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)',
-                [firstName, lastName, phone, email, await bcrypt.hash(password, 10), confirmationCode],
+                [firstName, lastName, phone, email, hashedPassword, confirmationCode],
                 (err) => (err ? reject(err) : resolve())
             );
         });
@@ -440,6 +444,55 @@ app.post('/api/register', async (req, res) => {
         res.status(201).json({ message: 'Код подтверждения отправлен на почту.' });
     } catch (error) {
         console.error('Ошибка при регистрации пользователя:', error);
+        res.status(500).json({ message: 'Ошибка сервера' });
+    }
+});
+
+// Подтверждение кода
+app.post('/api/confirm-code', async (req, res) => {
+    const { code } = req.body;
+
+    try {
+        // Проверка кода в temp_users
+        const [tempUser] = await new Promise((resolve, reject) => {
+            db.query(
+                'SELECT * FROM temp_users WHERE confirmation_code = ?',
+                [code],
+                (err, results) => (err ? reject(err) : resolve(results))
+            );
+        });
+
+        if (!tempUser) {
+            return res.status(400).json({ message: 'Неверный код подтверждения' });
+        }
+
+        // Перенос пользователя в основную таблицу
+        const userId = await new Promise((resolve, reject) => {
+            db.query(
+                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
+                [
+                    tempUser.first_name,
+                    tempUser.last_name,
+                    tempUser.phone,
+                    tempUser.email,
+                    tempUser.password_hash,
+                ],
+                (err, results) => (err ? reject(err) : resolve(results.insertId))
+            );
+        });
+
+        // Удаление временных данных
+        await new Promise((resolve, reject) => {
+            db.query(
+                'DELETE FROM temp_users WHERE confirmation_code = ?',
+                [code],
+                (err) => (err ? reject(err) : resolve())
+            );
+        });
+
+        res.status(200).json({ message: 'Подтверждение успешно!' });
+    } catch (error) {
+        console.error('Ошибка при подтверждении кода:', error);
         res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
