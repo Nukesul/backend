@@ -438,9 +438,84 @@ app.post('/api/register', async (req, res) => {
             from: `"Boodai Pizza" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Подтверждение регистрации',
-            html: `<p>Ваш код подтверждения: <b>${confirmationCode}</b></p>`,
+            html: `
+                <!DOCTYPE html>
+                <html lang="ru">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Подтверждение регистрации</title>
+                    <style>
+                        /* Общие стили */
+                        body {
+                            font-family: Arial, sans-serif;
+                            background-color: #f4f4f4;
+                            color: #333;
+                            margin: 0;
+                            padding: 0;
+                            text-align: center;
+                        }
+        
+                        .email-container {
+                            max-width: 600px;
+                            margin: 30px auto;
+                            padding: 20px;
+                            background-color: #fff;
+                            border-radius: 8px;
+                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                        }
+        
+                        h1 {
+                            font-size: 24px;
+                            color: #007BFF;
+                            margin-bottom: 20px;
+                        }
+        
+                        p {
+                            font-size: 16px;
+                            line-height: 1.5;
+                            color: #333;
+                        }
+        
+                        .confirmation-code {
+                            font-size: 18px;
+                            font-weight: bold;
+                            color: #FF6347;
+                        }
+        
+                        .footer {
+                            margin-top: 20px;
+                            font-size: 14px;
+                            color: #777;
+                        }
+        
+                        /* Респонсивность */
+                        @media (max-width: 480px) {
+                            .email-container {
+                                padding: 15px;
+                                width: 90%;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+        
+                    <div class="email-container">
+                        <h1>Подтверждение регистрации</h1>
+                        <p>Здравствуйте,</p>
+                        <p>Ваш код подтверждения: <span class="confirmation-code">${confirmationCode}</span></p>
+                        <p>Если вы не запрашивали код подтверждения, проигнорируйте это письмо.</p>
+        
+                        <div class="footer">
+                            <p>С уважением,<br>Команда Boodai Pizza</p>
+                        </div>
+                    </div>
+        
+                </body>
+                </html>
+            `
         });
-
+        
         res.status(201).json({ message: 'Код подтверждения отправлен на почту.' });
     } catch (error) {
         console.error('Ошибка при регистрации пользователя:', error);
