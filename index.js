@@ -583,6 +583,51 @@ app.post('/api/confirm-code', async (req, res) => {
     }
 });
 
+// Маршрут для повторной отправки кода
+app.post('/api/resend-code', async (req, res) => {
+    const { email } = req.body;
+
+    try {
+        // Получаем пользователя из временной таблицы
+        const [tempUser] = await new Promise((resolve, reject) => {
+            db.query(
+                'SELECT * FROM temp_users WHERE email = ?',
+                [email],
+                (err, results) => (err ? reject(err) : resolve(results))
+            );
+        });
+
+        if (!tempUser) {
+            return res.status(400).json({ message: 'Код не найден. Попробуйте запросить новый код.' });
+        }
+
+        // Проверка, прошло ли 60 секунд с последней отправки
+        const lastSentAt = new Date(tempUser.last_sent_at);
+        const now = new Date();
+        const diffInSeconds = (now - lastSentAt) / 1000; // Разница в секундах
+
+        if (diffInSeconds < 60) {
+            return res.status(400).json({ message: 'Пожалуйста, подождите 60 секунд перед повторной отправкой кода.' });
+        }
+
+        // Обновляем время последней отправки
+        await new Promise((resolve, reject) => {
+            db.query(
+                'UPDATE temp_users SET last_sent_at = ? WHERE email = ?',
+                [now, email],
+                (err) => (err ? reject(err) : resolve())
+            );
+        });
+
+        // Повторная отправка кода
+        await sendConfirmationCode(email, tempUser.confirmation_code); // Используем старый код
+
+        res.status(200).json({ message: 'Код повторно отправлен!' });
+    } catch (error) {
+        console.error('Ошибка при повторной отправке кода:', error);
+        res.status(500).json({ message: 'Ошибка сервера при повторной отправке кода' });
+    }
+});
 
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
