@@ -245,6 +245,12 @@ app.get('/api/send-order', async (req, res) => {
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
+    const discount = req.query.discount || 0; // Скидка (в процентах)
+    const promoCode = req.query.promoCode || 'Нет'; // Промокод
+
+    // Подсчёт итоговой суммы со скидкой
+    const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+    const totalWithDiscount = totalWithoutDiscount - totalWithoutDiscount * (discount / 100);
 
     const orderText = `
       📦 Новый заказ:
@@ -261,7 +267,10 @@ app.get('/api/send-order', async (req, res) => {
       🛒 Товары:
       ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
 
-      💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
+      💰 Промокод: ${promoCode}
+      🔖 Скидка: ${discount}%
+      💵 Итог без скидки: ${totalWithoutDiscount} сом
+      💳 Итог со скидкой: ${totalWithDiscount.toFixed(2)} сом
     `;
 
     try {
@@ -280,6 +289,7 @@ app.get('/api/send-order', async (req, res) => {
         });
     }
 });
+
 
 // Эндпоинт /api/data
 app.get('/api/data', (req, res) => {
@@ -581,51 +591,7 @@ app.post('/api/confirm-code', async (req, res) => {
         console.error('Ошибка при подтверждении кода:', error);
         res.status(500).json({ message: 'Ошибка сервера' });
     }
-});app.post('/api/resend-code', async (req, res) => {
-    const { email } = req.body;
-
-    try {
-        // Здесь меняем на вашу новую таблицу, например `new_temp_users`
-        const [newTempUser] = await new Promise((resolve, reject) => {
-            db.query(
-                'SELECT * FROM new_temp_users WHERE email = ?',
-                [email],
-                (err, results) => (err ? reject(err) : resolve(results))
-            );
-        });
-
-        if (!newTempUser) {
-            return res.status(400).json({ message: 'Код не найден. Попробуйте запросить новый код.' });
-        }
-
-        // Проверка времени
-        const lastSentAt = new Date(newTempUser.last_sent_at);
-        const now = new Date();
-        const diffInSeconds = (now - lastSentAt) / 1000;
-
-        if (diffInSeconds < 60) {
-            return res.status(400).json({ message: `Пожалуйста, подождите ${60 - Math.floor(diffInSeconds)} секунд перед повторной отправкой кода.` });
-        }
-
-        // Обновляем время последней отправки
-        await new Promise((resolve, reject) => {
-            db.query(
-                'UPDATE new_temp_users SET last_sent_at = ? WHERE email = ?',
-                [now, email],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
-
-        // Отправка кода
-        await sendConfirmationCode(email, newTempUser.confirmation_code);
-
-        res.status(200).json({ message: 'Код повторно отправлен!' });
-    } catch (error) {
-        console.error('Ошибка при повторной отправке кода:', error);
-        res.status(500).json({ message: 'Ошибка сервера при повторной отправке кода' });
-    }
 });
-
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
 app.get('/api/user', (req, res) => {
