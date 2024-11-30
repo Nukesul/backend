@@ -583,11 +583,7 @@ app.post('/api/confirm-code', async (req, res) => {
     }
 });
 app.post('/api/resend-code', async (req, res) => {
-    const { email } = req.body; // Ожидаем, что email будет в теле запроса
-
-    if (!email) {
-        return res.status(400).json({ message: 'Email не передан' });
-    }
+    const { email } = req.body;
 
     try {
         // Получаем пользователя из временной таблицы
@@ -598,6 +594,8 @@ app.post('/api/resend-code', async (req, res) => {
                 (err, results) => (err ? reject(err) : resolve(results))
             );
         });
+
+        console.log('Найден пользователь:', tempUser);  // Логируем найденного пользователя
 
         if (!tempUser) {
             return res.status(400).json({ message: 'Код не найден. Попробуйте запросить новый код.' });
