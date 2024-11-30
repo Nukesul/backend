@@ -581,25 +581,25 @@ app.post('/api/confirm-code', async (req, res) => {
         console.error('Ошибка при подтверждении кода:', error);
         res.status(500).json({ message: 'Ошибка сервера' });
     }
-});
-app.post('/api/resend-code', async (req, res) => {
+});app.post('/api/resend-code', async (req, res) => {
     const { email } = req.body;
 
     try {
-        const [tempUser] = await new Promise((resolve, reject) => {
+        // Здесь меняем на вашу новую таблицу, например `new_temp_users`
+        const [newTempUser] = await new Promise((resolve, reject) => {
             db.query(
-                'SELECT * FROM temp_users WHERE email = ?',
+                'SELECT * FROM new_temp_users WHERE email = ?',
                 [email],
                 (err, results) => (err ? reject(err) : resolve(results))
             );
         });
 
-        if (!tempUser) {
+        if (!newTempUser) {
             return res.status(400).json({ message: 'Код не найден. Попробуйте запросить новый код.' });
         }
 
         // Проверка времени
-        const lastSentAt = new Date(tempUser.last_sent_at);
+        const lastSentAt = new Date(newTempUser.last_sent_at);
         const now = new Date();
         const diffInSeconds = (now - lastSentAt) / 1000;
 
@@ -610,14 +610,14 @@ app.post('/api/resend-code', async (req, res) => {
         // Обновляем время последней отправки
         await new Promise((resolve, reject) => {
             db.query(
-                'UPDATE temp_users SET last_sent_at = ? WHERE email = ?',
+                'UPDATE new_temp_users SET last_sent_at = ? WHERE email = ?',
                 [now, email],
                 (err) => (err ? reject(err) : resolve())
             );
         });
 
         // Отправка кода
-        await sendConfirmationCode(email, tempUser.confirmation_code);
+        await sendConfirmationCode(email, newTempUser.confirmation_code);
 
         res.status(200).json({ message: 'Код повторно отправлен!' });
     } catch (error) {
@@ -625,7 +625,6 @@ app.post('/api/resend-code', async (req, res) => {
         res.status(500).json({ message: 'Ошибка сервера при повторной отправке кода' });
     }
 });
-
 
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
