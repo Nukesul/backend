@@ -582,10 +582,12 @@ app.post('/api/confirm-code', async (req, res) => {
         res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
-
-// Маршрут для повторной отправки кода
 app.post('/api/resend-code', async (req, res) => {
-    const { email } = req.body;
+    const { email } = req.body; // Ожидаем, что email будет в теле запроса
+
+    if (!email) {
+        return res.status(400).json({ message: 'Email не передан' });
+    }
 
     try {
         // Получаем пользователя из временной таблицы
