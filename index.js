@@ -244,13 +244,13 @@ app.get('/api/send-order', async (req, res) => {
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
-    const discount = req.query.discount || 0;  // Получаем скидку
+    const discount = parseFloat(req.query.discount) || 0;  // Получаем скидку (в процентах)
     const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
 
     // Вычисляем итоговую стоимость товаров без скидки
     const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
 
-    // Вычисляем сумму скидки (если есть)
+    // Если промокод использован, то вычисляем сумму скидки
     const discountAmount = promoCodeUsed ? totalWithoutDiscount * (discount / 100) : 0;
 
     // Итоговая сумма с учетом скидки
@@ -272,11 +272,11 @@ app.get('/api/send-order', async (req, res) => {
       *🛒 Товары:*
       ${cartItems.map(item => `- ${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
 
-      *💰 Итоговая стоимость товаров:* ${totalWithoutDiscount} сом
+      *💰 Итоговая стоимость товаров:* ${totalWithoutDiscount.toFixed(2)} сом
 
       ${promoCodeUsed ? `*💸 Скидка с промокодом:* ${discountAmount.toFixed(2)} сом` : '*💸 Скидка не применена*'}
 
-      *💰 Итоговая сумма:* ${promoCodeUsed ? totalWithDiscount.toFixed(2) : totalWithoutDiscount} сом
+      *💰 Итоговая сумма:* ${promoCodeUsed ? totalWithDiscount.toFixed(2) : totalWithoutDiscount.toFixed(2)} сом
     `;
 
     try {
