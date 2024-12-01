@@ -240,12 +240,20 @@ app.delete('/api/products/:id', (req, res) => {
 
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
-
 app.get('/api/send-order', async (req, res) => {
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
+    const discount = req.query.discount || 0;  // Получаем скидку
+    const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
 
+    // Вычисляем итоговую сумму без скидки
+    const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+
+    // Вычисляем итоговую сумму со скидкой
+    const totalWithDiscount = totalWithoutDiscount - totalWithoutDiscount * (discount / 100);
+
+    // Формирование текста заказа
     const orderText = `
       📦 Новый заказ:
       👤 Имя: ${orderDetails.name || 'Нет'}
@@ -261,7 +269,14 @@ app.get('/api/send-order', async (req, res) => {
       🛒 Товары:
       ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
 
-      💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
+      💰 Итоговая сумма без скидки: ${totalWithoutDiscount} сом
+      ${promoCodeUsed ? `💸 Итоговая сумма со скидкой (с промокодом): ${totalWithDiscount.toFixed(2)} сом` : `💸 Итоговая сумма без промокода: ${totalWithoutDiscount} сом`}
+      
+      -----------------------------------
+
+      🔴 *Итоговый расчет:*
+      ${promoCodeUsed ? `💵 Сумма без скидки: ${totalWithoutDiscount} сом` : `💵 Сумма без скидки: ${totalWithoutDiscount} сом`}
+      ${promoCodeUsed ? `💸 Сумма с промокодом: ${totalWithDiscount.toFixed(2)} сом` : `💸 Сумма без промокода: ${totalWithoutDiscount} сом`}
     `;
 
     try {
