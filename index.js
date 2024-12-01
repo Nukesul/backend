@@ -241,49 +241,63 @@ app.delete('/api/products/:id', (req, res) => {
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
 app.get('/api/send-order', async (req, res) => {
-    const orderDetails = JSON.parse(req.query.orderDetails);
-    const deliveryDetails = JSON.parse(req.query.deliveryDetails);
-    const cartItems = JSON.parse(req.query.cartItems);
-    const discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
-    const promoCodeUsed = discount > 0; // Проверяем, использовался ли промокод
-
-    // Вычисляем итоговую стоимость товаров без скидки
-    const totalWithoutDiscount = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-
-    // Вычисляем сумму скидки (если есть)
-    const discountAmount = promoCodeUsed ? totalWithoutDiscount * (discount / 100) : 0;
-
-    // Убедимся, что скидка не больше итоговой суммы
-    const totalWithDiscount = Math.max(totalWithoutDiscount - discountAmount, 0);
-
-    // Формируем текст заказа
-    const orderText = `
-      📦 Новый заказ:
-      👤 Имя: ${orderDetails.name || 'Нет'}
-      📞 Телефон: ${orderDetails.phone || 'Нет'}
-      📝 Комментарии: ${orderDetails.comments || 'Нет'}
-      
-      🚚 Доставка:
-      👤 Имя: ${deliveryDetails.name || 'Нет'}
-      📞 Телефон: ${deliveryDetails.phone || 'Нет'}
-      📍 Адрес: ${deliveryDetails.address || 'Нет'}
-      📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
-
-      🛒 Товары:
-      ${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.price} сом)`).join('\n')}
-
-      💰 Итоговая стоимость товаров: ${totalWithoutDiscount.toFixed(2)} сом
-      ${promoCodeUsed ? `💸 Скидка с промокодом: ${discountAmount.toFixed(2)} сом` : '💸 Скидка не применена'}
-      💰 Итоговая сумма: ${totalWithDiscount.toFixed(2)} сом
-    `;
-
     try {
+        const orderDetails = JSON.parse(req.query.orderDetails);
+        const deliveryDetails = JSON.parse(req.query.deliveryDetails);
+        const cartItems = JSON.parse(req.query.cartItems);
+        let discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
+
+        // Ограничиваем максимальную скидку
+        if (discount > 50) {
+            discount = 50; // Максимальная скидка 50%
+        }
+
+        const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
+
+        // Вычисляем итоговую стоимость товаров без скидки
+        const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+
+        // Вычисляем сумму скидки (не превышает общую сумму)
+        const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * discount / 100, totalWithoutDiscount) : 0;
+
+        // Итоговая сумма с учетом скидки
+        const totalWithDiscount = Math.max(totalWithoutDiscount - discountAmount, 0);
+
+        // Округляем значения до двух знаков
+        const roundedTotalWithoutDiscount = totalWithoutDiscount.toFixed(2);
+        const roundedDiscountAmount = discountAmount.toFixed(2);
+        const roundedTotalWithDiscount = totalWithDiscount.toFixed(2);
+
+        // Формирование текста заказа для админа
+        const orderText = `
+📦 *Новый заказ:*
+👤 *Имя*: ${orderDetails.name || 'Нет'}
+📞 *Телефон*: ${orderDetails.phone || 'Нет'}
+📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
+
+🚚 *Доставка:*
+👤 *Имя*: ${deliveryDetails.name || 'Нет'}
+📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
+📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
+📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
+
+🛒 *Товары:*
+${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.price} сом)`).join('\n')}
+
+💰 *Итоговая стоимость товаров*: ${roundedTotalWithoutDiscount} сом
+${promoCodeUsed ? `💸 *Скидка с промокодом*: ${roundedDiscountAmount} сом` : '💸 Скидка не применена'}
+💰 *Итоговая сумма*: ${roundedTotalWithDiscount} сом
+`;
+
+        // Отправка сообщения в Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
             text: orderText,
+            parse_mode: "Markdown"
         });
 
         res.status(200).json({ message: 'Заказ отправлен в Telegram' });
+
     } catch (error) {
         console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
         res.status(500).json({ 
