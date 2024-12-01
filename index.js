@@ -245,12 +245,6 @@ app.get('/api/send-order', async (req, res) => {
     const orderDetails = JSON.parse(req.query.orderDetails);
     const deliveryDetails = JSON.parse(req.query.deliveryDetails);
     const cartItems = JSON.parse(req.query.cartItems);
-    const discount = req.query.discount || 0; // Скидка (в процентах)
-    const promoCode = req.query.promoCode || 'Нет'; // Промокод
-
-    // Подсчёт итоговой суммы со скидкой
-    const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
-    const totalWithDiscount = totalWithoutDiscount - totalWithoutDiscount * (discount / 100);
 
     const orderText = `
       📦 Новый заказ:
@@ -267,10 +261,7 @@ app.get('/api/send-order', async (req, res) => {
       🛒 Товары:
       ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
 
-      💰 Промокод: ${promoCode}
-      🔖 Скидка: ${discount}%
-      💵 Итог без скидки: ${totalWithoutDiscount} сом
-      💳 Итог со скидкой: ${totalWithDiscount.toFixed(2)} сом
+      💰 Итого: ${cartItems.reduce((total, item) => total + item.price * item.quantity, 0)} сом
     `;
 
     try {
@@ -289,7 +280,6 @@ app.get('/api/send-order', async (req, res) => {
         });
     }
 });
-
 
 // Эндпоинт /api/data
 app.get('/api/data', (req, res) => {
@@ -746,61 +736,66 @@ app.delete('/api/users/:user_id', (req, res) => {
 
 
 
-const nodemailer = require('nodemailer');  // Подключение nodemailer
-
-// Создание транспортера для отправки почты через Gmail
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'vorlodgamess@gmail.com',
-        pass: 'hpmjnrjmaedrylve',  // Лучше использовать переменные окружения для безопасности
-    },
-});
-
 // Функция для генерации промокода
 function generatePromoCode() {
     return 'PROMO-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
 
+// Маршрут для обновления и отправки промокода пользователю
 // Маршрут для получения или генерации промокода
 app.post('/api/users/:user_id/promo', (req, res) => {
-    const userId = parseInt(req.params.user_id, 10);
-    const { promoCode, discount } = req.body; // Получаем скидку из тела запроса
-  
+    const userId = parseInt(req.params.user_id, 10); // Исправлено извлечение параметра
+
     if (isNaN(userId)) {
         return res.status(400).send('Некорректный идентификатор пользователя');
     }
-  
-    if (discount < 1 || discount > 100) {
-        return res.status(400).send('Процент скидки должен быть от 1 до 100');
-    }
-  
+
     // Проверка наличия пользователя
     db.query('SELECT email, promo_code, promo_code_created_at FROM userskg WHERE user_id = ?', [userId], (err, users) => {
         if (err) {
             console.error('Ошибка при получении пользователя:', err);
             return res.status(500).send('Ошибка сервера');
         }
-  
+
         const user = users[0];
-  
+
         if (!user) {
             return res.status(404).send('Пользователь не найден');
         }
-  
-        // Если промокод был передан, обновляем его с учётом скидки
-        if (promoCode) {
-            const promoCodeWithDiscount = `${promoCode}-DISCOUNT-${discount}`;
-  
-            // Обновление промокода в базе данных
-            db.query('UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?',
-                [promoCodeWithDiscount, new Date(), userId], (updateErr) => {
+
+        // Проверка, если промокод уже есть и он действителен
+        if (user.promo_code && user.promo_code_created_at) {
+            const promoCodeCreationDate = new Date(user.promo_code_created_at);
+            const now = new Date();
+            const diff = now - promoCodeCreationDate; // Разница в миллисекундах
+            const twentyFourHours = 24 * 60 * 60 * 1000; // 24 часа в миллисекундах
+
+            if (diff < twentyFourHours) {
+                // Промокод ещё действителен, отправляем его
+                return res.send(`Ваш промокод: ${user.promo_code}`);
+            } else {
+                // Промокод устарел, обновляем его
+                console.log('Промокод истек, генерируем новый');
+                user.promo_code = generatePromoCode();
+                user.promo_code_created_at = now;
+
+                // Обновляем промокод в базе данных
+                db.query('UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?', 
+                    [user.promo_code, now, userId], (updateErr, updateResult) => {
                     if (updateErr) {
                         console.error('Ошибка при обновлении промокода:', updateErr);
                         return res.status(500).send('Ошибка сервера');
                     }
 
-                    // Отправка письма с промокодом
+                    // Настройка SMTP для отправки письма
+                    const transporter = nodemailer.createTransport({
+                        service: 'gmail',
+                        auth: {
+                            user: 'vorlodgamess@gmail.com', // Укажите свой email
+                            pass: 'hpmjnrjmaedrylve', // Укажите сгенерированный пароль приложения
+                        },
+                    });
+
                     const mailOptions = {
                         from: 'vorlodgamess@gmail.com',
                         to: user.email,
@@ -846,9 +841,9 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                           <body>
                             <div class="container">
                               <h1>Boodya Pizza</h1>
-                              <img src="https://example.com/logo.png" alt="Boodya Pizza Logo" class="logo">
+                              <img src="https://example.com/logo.png" alt="Boodya Pizza Logo" class="logo"> <!-- Замените на ваш URL логотипа -->
                               <p>Ваш уникальный промокод:</p>
-                              <div class="promo-code">${promoCodeWithDiscount}</div>
+                              <div class="promo-code">${user.promo_code}</div>
                               <p>Промокод действителен 24 часа с момента получения.</p>
                               <div class="footer">
                                 <p>Спасибо, что выбрали Boodya Pizza!</p>
@@ -869,6 +864,7 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         res.send('Новый промокод успешно отправлен на почту');
                     });
                 });
+            }
         } else {
             // Генерация нового промокода, если его нет
             const promoCode = generatePromoCode();
@@ -882,7 +878,15 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         return res.status(500).send('Ошибка сервера');
                     }
 
-                    // Отправка письма с новым промокодом
+                    // Настройка SMTP для отправки письма
+                    const transporter = nodemailer.createTransport({
+                        service: 'gmail',
+                        auth: {
+                            user: 'vorlodgamess@gmail.com',
+                            pass: 'hpmjnrjmaedrylve',
+                        },
+                    });
+
                     const mailOptions = {
                         from: 'vorlodgamess@gmail.com',
                         to: user.email,
@@ -904,18 +908,18 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                                 margin-top: 20px;
                               }
                               h1 {
-                                color: #FFD700; /* Золотистый цвет для заголовков */
+                                color: #FFD700;
                                 font-size: 24px;
                               }
                               .promo-code {
                                 font-size: 28px;
                                 font-weight: bold;
-                                color: #FFD700; /* Золотистый цвет для промокода */
+                                color: #FFD700;
                                 margin: 20px 0;
                               }
                               .logo {
                                 margin: 20px 0;
-                                width: 150px; /* Размер логотипа */
+                                width: 150px;
                                 height: auto;
                               }
                               .footer {
