@@ -737,9 +737,12 @@ app.delete('/api/users/:user_id', (req, res) => {
 });
 
 
+
+// Функция для генерации промокода
 function generatePromoCode() {
     return 'PROMO-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
+
 // Маршрут для обновления и отправки промокода пользователю
 // Маршрут для получения или генерации промокода
 app.post('/api/users/:user_id/promo', (req, res) => {
@@ -994,10 +997,18 @@ app.post('/api/validate-promo', (req, res) => {
         return res.status(400).json({ message: 'Промокод истек.' });
       }
   
-      // Промокод действителен, применяем скидку
-      res.json({ discount: 0.1 });
+      // Получаем значение скидки из базы данных
+      const discount = promoCodeDetails.discount;
+  
+      if (!discount || discount <= 0) {
+        return res.status(400).json({ message: 'Скидка недействительна для данного промокода.' });
+      }
+  
+      // Промокод действителен, возвращаем скидку
+      res.json({ discount: discount });
     });
   });
+  
   
   
   // API для аутентификации пользователя через user_id
