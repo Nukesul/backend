@@ -702,8 +702,6 @@ app.post('/api/login', (req, res) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     
-    console.log('Токен из запроса:', token);
-  
     if (!token) {
       return res.status(403).json({ message: 'Токен не найден. Доступ запрещен.' });
     }
@@ -715,7 +713,8 @@ app.post('/api/login', (req, res) => {
       req.user = user; // Добавляем данные пользователя в запрос
       next();
     });
-  };
+};
+
   
   
   // Получение данных пользователя
