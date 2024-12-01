@@ -702,7 +702,6 @@ app.post('/api/login', (req, res) => {
 
 
 
-const jwt = require('jsonwebtoken');
 
 app.get('/api/user', (req, res) => {
   const token = req.headers['authorization']?.split(' ')[1]; // Extract token from Authorization header
