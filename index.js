@@ -240,34 +240,33 @@ app.delete('/api/products/:id', (req, res) => {
 
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
-app.get('/api/send-order', async (req, res) => {
+app.post('/api/send-order', async (req, res) => {
     try {
-        const orderDetails = req.query.orderDetails ? JSON.parse(req.query.orderDetails) : {};
-    const deliveryDetails = req.query.deliveryDetails ? JSON.parse(req.query.deliveryDetails) : {};
-    const cartItems = req.query.cartItems ? JSON.parse(req.query.cartItems) : [];
-    const total = req.query.total || 'Не указано';
-    const discountedTotal = req.query.discountedTotal || 'Не указано';
-    const promoCodeUsed = !!req.query.promoCode;
-
-const orderText = `
-📦 *Новый заказ:*
-👤 *Имя*: ${orderDetails.name || 'Нет'}
-📞 *Телефон*: ${orderDetails.phone || 'Нет'}
-📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
-
-🚚 *Доставка:*
-👤 *Имя*: ${deliveryDetails.name || 'Нет'}
-📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
-📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
-📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
-
-🛒 *Товары:*
-${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
-
-💰 *Итоговая стоимость товаров*: ${total} сом
-${promoCodeUsed ? `💸 *Скидка с промокодом*: ${discountedTotal} сом` : '💸 Скидка не применена'}
-💰 *Итоговая сумма*: ${discountedTotal} сом
-`;
+      const { orderDetails, deliveryDetails, cartItems, discount, promoCode } = req.body;
+  
+      const total = cartItems.reduce((sum, item) => sum + item.originalPrice * item.quantity, 0);
+      const discountedTotal = total * (1 - discount / 100);
+  
+      const orderText = `
+        📦 *Новый заказ:*
+        👤 *Имя*: ${orderDetails.name || 'Нет'}
+        📞 *Телефон*: ${orderDetails.phone || 'Нет'}
+        📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
+  
+        🚚 *Доставка:*
+        👤 *Имя*: ${deliveryDetails.name || 'Нет'}
+        📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
+        📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
+        📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
+  
+        🛒 *Товары:*
+        ${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
+  
+        💰 *Итоговая стоимость товаров*: ${total} сом
+        ${promoCode ? `💸 *Скидка с промокодом*: ${discountedTotal} сом` : '💸 Скидка не применена'}
+        💰 *Итоговая сумма*: ${discountedTotal} сом
+      `;
+  
 
         // Отправка сообщения в Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
