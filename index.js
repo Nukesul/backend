@@ -248,7 +248,10 @@ app.get('/api/send-order', async (req, res) => {
         let discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
 
         // Ограничиваем максимальную скидку
-       
+        if (discount > 99) {
+            discount = 99; // Максимальная скидка 50%
+        }
+
         const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
 
         // Вычисляем итоговую стоимость товаров без скидки
