@@ -734,294 +734,166 @@ app.delete('/api/users/:user_id', (req, res) => {
     });
 });
 
-
-
-// Функция для генерации промокода
 function generatePromoCode() {
     return 'PROMO-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
 
-// Маршрут для обновления и отправки промокода пользователю
-// Маршрут для получения или генерации промокода
-app.post('/api/users/:user_id/promo', (req, res) => {
-    const userId = parseInt(req.params.user_id, 10); // Исправлено извлечение параметра
+// Функция отправки email
+async function sendPromoCodeEmail(email, promoCode, res) {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: 'vorlodgamess@gmail.com',
+            pass: 'hpmjnrjmaedrylve',
+        },
+    });
 
-    if (isNaN(userId)) {
-        return res.status(400).send('Некорректный идентификатор пользователя');
+    const mailOptions = {
+        from: 'vorlodgamess@gmail.com',
+        to: email,
+        subject: 'Ваш новый промокод от Boodya Pizza',
+        html: `
+        <html>
+          <head>
+            <style>
+              body {
+                background-color: #000000;
+                color: #ffffff;
+                font-family: Arial, sans-serif;
+                text-align: center;
+              }
+              .container {
+                padding: 20px;
+                background-color: #222222;
+                border-radius: 8px;
+                margin-top: 20px;
+              }
+              h1 {
+                color: #FFD700;
+                font-size: 24px;
+              }
+              .promo-code {
+                font-size: 28px;
+                font-weight: bold;
+                color: #FFD700;
+                margin: 20px 0;
+              }
+              .footer {
+                margin-top: 40px;
+                font-size: 14px;
+                color: #777;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>Boodya Pizza</h1>
+              <p>Ваш уникальный промокод:</p>
+              <div class="promo-code">${promoCode}</div>
+              <p>Промокод действителен 24 часа с момента получения.</p>
+              <div class="footer">
+                <p>Спасибо, что выбрали Boodya Pizza!</p>
+                <p>Мы всегда рады помочь вам.</p>
+              </div>
+            </div>
+          </body>
+        </html>`,
+    };
+
+    transporter.sendMail(mailOptions, (err, info) => {
+        if (err) {
+            console.error('Ошибка при отправке письма:', err);
+            return res.status(500).send('Ошибка при отправке письма');
+        }
+        res.send('Промокод успешно отправлен на почту');
+    });
+}
+
+// Маршрут для генерации или обновления промокода
+app.post('/api/users/:user_id/promo', async (req, res) => {
+    const userId = parseInt(req.params.user_id, 10);
+    const { promoCode, discount } = req.body;
+
+    if (isNaN(userId) || discount < 1 || discount > 100) {
+        return res.status(400).send('Некорректные данные');
     }
 
-    // Проверка наличия пользователя
-    db.query('SELECT email, promo_code, promo_code_created_at FROM userskg WHERE user_id = ?', [userId], (err, users) => {
-        if (err) {
-            console.error('Ошибка при получении пользователя:', err);
-            return res.status(500).send('Ошибка сервера');
-        }
+    try {
+        const [users] = await db.query('SELECT email FROM userskg WHERE user_id = ?', [userId]);
 
-        const user = users[0];
-
-        if (!user) {
+        if (users.length === 0) {
             return res.status(404).send('Пользователь не найден');
         }
 
-        // Проверка, если промокод уже есть и он действителен
-        if (user.promo_code && user.promo_code_created_at) {
-            const promoCodeCreationDate = new Date(user.promo_code_created_at);
-            const now = new Date();
-            const diff = now - promoCodeCreationDate; // Разница в миллисекундах
-            const twentyFourHours = 24 * 60 * 60 * 1000; // 24 часа в миллисекундах
+        const user = users[0];
+        const promoCodeWithDiscount = `${promoCode || generatePromoCode()}-DISCOUNT-${discount}`;
 
-            if (diff < twentyFourHours) {
-                // Промокод ещё действителен, отправляем его
-                return res.send(`Ваш промокод: ${user.promo_code}`);
-            } else {
-                // Промокод устарел, обновляем его
-                console.log('Промокод истек, генерируем новый');
-                user.promo_code = generatePromoCode();
-                user.promo_code_created_at = now;
+        await db.query(
+            'UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?',
+            [promoCodeWithDiscount, new Date(), userId]
+        );
 
-                // Обновляем промокод в базе данных
-                db.query('UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?', 
-                    [user.promo_code, now, userId], (updateErr, updateResult) => {
-                    if (updateErr) {
-                        console.error('Ошибка при обновлении промокода:', updateErr);
-                        return res.status(500).send('Ошибка сервера');
-                    }
-
-                    // Настройка SMTP для отправки письма
-                    const transporter = nodemailer.createTransport({
-                        service: 'gmail',
-                        auth: {
-                            user: 'vorlodgamess@gmail.com', // Укажите свой email
-                            pass: 'hpmjnrjmaedrylve', // Укажите сгенерированный пароль приложения
-                        },
-                    });
-
-                    const mailOptions = {
-                        from: 'vorlodgamess@gmail.com',
-                        to: user.email,
-                        subject: 'Ваш новый промокод от Boodya Pizza',
-                        html: `
-                        <html>
-                          <head>
-                            <style>
-                              body {
-                                background-color: #000000;
-                                color: #ffffff;
-                                font-family: Arial, sans-serif;
-                                text-align: center;
-                              }
-                              .container {
-                                padding: 20px;
-                                background-color: #222222;
-                                border-radius: 8px;
-                                margin-top: 20px;
-                              }
-                              h1 {
-                                color: #FFD700; /* Золотистый цвет для заголовков */
-                                font-size: 24px;
-                              }
-                              .promo-code {
-                                font-size: 28px;
-                                font-weight: bold;
-                                color: #FFD700; /* Золотистый цвет для промокода */
-                                margin: 20px 0;
-                              }
-                              .logo {
-                                margin: 20px 0;
-                                width: 150px; /* Размер логотипа */
-                                height: auto;
-                              }
-                              .footer {
-                                margin-top: 40px;
-                                font-size: 14px;
-                                color: #777;
-                              }
-                            </style>
-                          </head>
-                          <body>
-                            <div class="container">
-                              <h1>Boodya Pizza</h1>
-                              <img src="https://example.com/logo.png" alt="Boodya Pizza Logo" class="logo"> <!-- Замените на ваш URL логотипа -->
-                              <p>Ваш уникальный промокод:</p>
-                              <div class="promo-code">${user.promo_code}</div>
-                              <p>Промокод действителен 24 часа с момента получения.</p>
-                              <div class="footer">
-                                <p>Спасибо, что выбрали Boodya Pizza!</p>
-                                <p>Мы всегда рады помочь вам.</p>
-                              </div>
-                            </div>
-                          </body>
-                        </html>
-                        `
-                    };
-
-                    transporter.sendMail(mailOptions, (mailErr, info) => {
-                        if (mailErr) {
-                            console.error('Ошибка при отправке письма:', mailErr);
-                            return res.status(500).send('Ошибка при отправке письма');
-                        }
-
-                        res.send('Новый промокод успешно отправлен на почту');
-                    });
-                });
-            }
-        } else {
-            // Генерация нового промокода, если его нет
-            const promoCode = generatePromoCode();
-            const now = new Date();
-
-            // Обновление промокода и времени его создания в базе данных
-            db.query('UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?',
-                [promoCode, now, userId], (updateErr, updateResult) => {
-                    if (updateErr) {
-                        console.error('Ошибка при обновлении промокода:', updateErr);
-                        return res.status(500).send('Ошибка сервера');
-                    }
-
-                    // Настройка SMTP для отправки письма
-                    const transporter = nodemailer.createTransport({
-                        service: 'gmail',
-                        auth: {
-                            user: 'vorlodgamess@gmail.com',
-                            pass: 'hpmjnrjmaedrylve',
-                        },
-                    });
-
-                    const mailOptions = {
-                        from: 'vorlodgamess@gmail.com',
-                        to: user.email,
-                        subject: 'Ваш новый промокод от Boodya Pizza',
-                        html: `
-                        <html>
-                          <head>
-                            <style>
-                              body {
-                                background-color: #000000;
-                                color: #ffffff;
-                                font-family: Arial, sans-serif;
-                                text-align: center;
-                              }
-                              .container {
-                                padding: 20px;
-                                background-color: #222222;
-                                border-radius: 8px;
-                                margin-top: 20px;
-                              }
-                              h1 {
-                                color: #FFD700;
-                                font-size: 24px;
-                              }
-                              .promo-code {
-                                font-size: 28px;
-                                font-weight: bold;
-                                color: #FFD700;
-                                margin: 20px 0;
-                              }
-                              .logo {
-                                margin: 20px 0;
-                                width: 150px;
-                                height: auto;
-                              }
-                              .footer {
-                                margin-top: 40px;
-                                font-size: 14px;
-                                color: #777;
-                              }
-                            </style>
-                          </head>
-                          <body>
-                            <div class="container">
-                              <h1>Boodya Pizza</h1>
-                              <img src="https://example.com/logo.png" alt="Boodya Pizza Logo" class="logo">
-                              <p>Ваш уникальный промокод:</p>
-                              <div class="promo-code">${promoCode}</div>
-                              <p>Промокод действителен 24 часа с момента получения.</p>
-                              <div class="footer">
-                                <p>Спасибо, что выбрали Boodya Pizza!</p>
-                                <p>Мы всегда рады помочь вам.</p>
-                              </div>
-                            </div>
-                          </body>
-                        </html>
-                        `
-                    };
-
-                    transporter.sendMail(mailOptions, (mailErr, info) => {
-                        if (mailErr) {
-                            console.error('Ошибка при отправке письма:', mailErr);
-                            return res.status(500).send('Ошибка при отправке письма');
-                        }
-
-                        res.send('Промокод успешно отправлен на почту');
-                    });
-                });
-        }
-    });
+        await sendPromoCodeEmail(user.email, promoCodeWithDiscount, res);
+    } catch (error) {
+        console.error('Ошибка сервера:', error);
+        return res.status(500).send('Ошибка сервера');
+    }
 });
 
 // API для проверки промокода
-app.post('/api/validate-promo', (req, res) => {
+app.post('/api/validate-promo', async (req, res) => {
     const { promoCode } = req.body;
-  
-    console.log("Получен промокод:", promoCode); // Логируем промокод
-  
+
     if (!promoCode) {
-      return res.status(400).json({ message: 'Промокод не может быть пустым.' });
+        return res.status(400).json({ message: 'Промокод не может быть пустым.' });
     }
-  
-    const query = 'SELECT * FROM userskg WHERE promo_code = ?';
-    db.query(query, [promoCode], (err, results) => {
-      if (err) {
-        console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
-        return res.status(500).json({ message: 'Ошибка сервера', error: err });
-      }
-  
-      if (results.length === 0) {
-        return res.status(400).json({ message: 'Неверный промокод.' });
-      }
-  
-      const promoCodeDetails = results[0];
-      const currentDate = new Date();
-      const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
-  
-      // Проверяем срок действия промокода
-      const expiryDate = new Date(promoCodeCreatedAt.getTime() + 24 * 60 * 60 * 1000); // 24 часа с момента создания
-  
-      if (currentDate > expiryDate) {
-        return res.status(400).json({ message: 'Промокод истек.' });
-      }
-  
-      // Промокод действителен, применяем скидку
-      res.json({ discount: 0.1 });
-    });
-  });
-  
-  
-  // API для аутентификации пользователя через user_id
-  app.post('/api/authenticate', (req, res) => {
+
+    try {
+        const [results] = await db.query('SELECT * FROM userskg WHERE promo_code = ?', [promoCode]);
+
+        if (results.length === 0) {
+            return res.status(400).json({ message: 'Неверный промокод.' });
+        }
+
+        const promoCodeDetails = results[0];
+        const currentDate = new Date();
+        const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
+
+        // Проверяем срок действия промокода
+        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 24 * 60 * 60 * 1000); // 24 часа с момента создания
+
+        if (currentDate > expiryDate) {
+            return res.status(400).json({ message: 'Промокод истек.' });
+        }
+
+        res.json({ discount: 0.1 }); // Например, 10% скидка
+    } catch (error) {
+        console.error('Ошибка сервера:', error);
+        return res.status(500).json({ message: 'Ошибка сервера' });
+    }
+});
+
+// API для аутентификации пользователя
+app.post('/api/authenticate', async (req, res) => {
     const { user_id } = req.body;
 
     if (!user_id) {
-        return res.status(400).json({ error: "User ID is required" });
+        return res.status(400).json({ error: 'User ID is required' });
     }
 
-    const query = 'SELECT * FROM userskg WHERE user_id = ?';
-    db.query(query, [user_id], (err, results) => {
-        if (err) {
-            console.error('Ошибка при выполнении запроса:', err);
-            return res.status(500).json({ error: "Ошибка сервера" });
-        }
+    try {
+        const [results] = await db.query('SELECT * FROM userskg WHERE user_id = ?', [user_id]);
 
         if (results.length === 0) {
-            return res.status(404).json({ error: "Пользователь не найден" });
+            return res.status(404).json({ error: 'Пользователь не найден' });
         }
 
-        // Например, возвращаем информацию о пользователе или промокод
-        res.json({ 
-            promoCode: results[0].promoCode || null, 
-            user: results[0] 
-        });
-    });
+        const user = results[0];
+        res.json({ promoCode: user.promo_code || null, user });
+    } catch (error) {
+        console.error('Ошибка сервера:', error);
+        return res.status(500).json({ error: 'Ошибка сервера' });
+    }
 });
 
   
