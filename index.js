@@ -252,7 +252,8 @@ app.get('/api/send-order', async (req, res) => {
     const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
 
     // 2. Если промокод использован, рассчитываем сумму скидки
-    const discountAmount = promoCodeUsed ? totalWithoutDiscount * (discount / 100) : 0;
+    // Убедимся, что скидка не превышает 100%
+    const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * (discount / 100), totalWithoutDiscount) : 0;
 
     // 3. Итоговая сумма с учетом скидки
     const totalWithDiscount = totalWithoutDiscount - discountAmount;
