@@ -714,7 +714,9 @@ app.delete('/api/users/:user_id', (req, res) => {
     if (isNaN(userId)) {
         return res.status(400).send('Неверный идентификатор пользователя');
     }
-
+    if (!discount || discount < 1 || discount > 100) {
+        return res.status(400).send('Процент скидки должен быть от 1 до 100');
+    }
     // Start by deleting the user's related data from other tables, if any exist
     // For example, if there's a table for user orders or any related records
 
@@ -735,12 +737,9 @@ app.delete('/api/users/:user_id', (req, res) => {
 });
 
 
-
-// Функция для генерации промокода
 function generatePromoCode() {
     return 'PROMO-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
-
 // Маршрут для обновления и отправки промокода пользователю
 // Маршрут для получения или генерации промокода
 app.post('/api/users/:user_id/promo', (req, res) => {
@@ -780,12 +779,14 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                 user.promo_code_created_at = now;
 
                 // Обновляем промокод в базе данных
-                db.query('UPDATE userskg SET promo_code = ?, promo_code_created_at = ? WHERE user_id = ?', 
-                    [user.promo_code, now, userId], (updateErr, updateResult) => {
-                    if (updateErr) {
-                        console.error('Ошибка при обновлении промокода:', updateErr);
-                        return res.status(500).send('Ошибка сервера');
-                    }
+                db.query(
+                    'UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?',
+                    [promoCode, now, discount, userId],
+                    (updateErr) => {
+                        if (updateErr) {
+                            console.error('Ошибка при обновлении промокода:', updateErr);
+                            return res.status(500).send('Ошибка сервера');
+                        }
 
                     // Настройка SMTP для отправки письма
                     const transporter = nodemailer.createTransport({
@@ -843,7 +844,9 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                               <h1>Boodya Pizza</h1>
                               <img src="https://example.com/logo.png" alt="Boodya Pizza Logo" class="logo"> <!-- Замените на ваш URL логотипа -->
                               <p>Ваш уникальный промокод:</p>
+                               <p>Скидка: <strong>${discount}%</strong></p>
                               <div class="promo-code">${user.promo_code}</div>
+
                               <p>Промокод действителен 24 часа с момента получения.</p>
                               <div class="footer">
                                 <p>Спасибо, что выбрали Boodya Pizza!</p>
@@ -855,13 +858,13 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         `
                     };
 
-                    transporter.sendMail(mailOptions, (mailErr, info) => {
+                    transporter.sendMail(mailOptions, (mailErr) => {
                         if (mailErr) {
                             console.error('Ошибка при отправке письма:', mailErr);
                             return res.status(500).send('Ошибка при отправке письма');
                         }
-
-                        res.send('Новый промокод успешно отправлен на почту');
+    
+                        res.send({ promoCode, discount });
                     });
                 });
             }
