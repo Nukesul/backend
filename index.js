@@ -701,20 +701,41 @@ app.post('/api/login', (req, res) => {
 });
 
 
-
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+  
+    if (!token) {
+      return res.status(403).json({ message: 'Токен не найден. Доступ запрещен.' });
+    }
+  
+    jwt.verify(token, 'your_secret_key', (err, user) => {
+      if (err) {
+        return res.status(403).json({ message: 'Недействительный токен.' });
+      }
+      req.user = user; // Добавляем данные пользователя в запрос
+      next();
+    });
+  };
 // Маршрут для получения всех пользователей
-app.get('/api/users', (req, res) => {
-    const query = 'SELECT * FROM userskg';
+app.get('/api/user', authenticateToken, (req, res) => {
+    const userId = req.user.user_id; // ID пользователя из токена
+    const query = 'SELECT * FROM userskg WHERE user_id = ?';
 
-    db.query(query, (err, results) => {
+    db.query(query, [userId], (err, results) => {
         if (err) {
-            console.error('Ошибка при выполнении запроса:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
+            console.error('Ошибка базы данных:', err);
+            return res.status(500).json({ message: 'Ошибка сервера' });
         }
-        res.json(results); // Отправка данных в ответе
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Пользователь не найден' });
+        }
+
+        res.json(results[0]); // Отправка данных пользователя
     });
 });
+
 
 app.delete('/api/users/:user_id', (req, res) => {
     const userId = parseInt(req.params.user_id); // Корректный парсинг user_id
