@@ -276,7 +276,7 @@ app.get('/api/send-order', async (req, res) => {
 
       ${promoCodeUsed ? `*💸 Скидка с промокодом:* ${discountAmount.toFixed(2)} сом` : '*💸 Скидка не применена*'}
 
-      ${promoCodeUsed ? `*💰 Итоговая сумма с промокодом:* ${totalWithDiscount.toFixed(2)} сом` : `*💰 Итоговая сумма:* ${totalWithoutDiscount} сом`}
+      *💰 Итоговая сумма:* ${promoCodeUsed ? totalWithDiscount.toFixed(2) : totalWithoutDiscount} сом
     `;
 
     try {
