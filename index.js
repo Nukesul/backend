@@ -245,16 +245,22 @@ app.get('/api/send-order', async (req, res) => {
         const orderDetails = JSON.parse(req.query.orderDetails);
         const deliveryDetails = JSON.parse(req.query.deliveryDetails);
         const cartItems = JSON.parse(req.query.cartItems);
-        const discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
+        let discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
+
+        // Ограничиваем максимальную скидку
+        if (discount > 50) {
+            discount = 50; // Максимальная скидка 50%
+        }
+
         const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
 
         // Вычисляем итоговую стоимость товаров без скидки
         const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
 
-        // Вычисляем сумму скидки (если есть), не превышающую общую сумму
+        // Вычисляем сумму скидки (не превышает общую сумму)
         const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * discount / 100, totalWithoutDiscount) : 0;
 
-        // Итоговая сумма с учетом скидки (минимум 0 сом)
+        // Итоговая сумма с учетом скидки
         const totalWithDiscount = Math.max(totalWithoutDiscount - discountAmount, 0);
 
         // Округляем значения до двух знаков
