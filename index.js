@@ -709,18 +709,20 @@ app.get('/api/users', (req, res) => {
 });
 
 app.delete('/api/users/:user_id', (req, res) => {
-    const userId = parseInt(req.params.user_id); // Correctly parse user_id
+    const userId = parseInt(req.params.user_id); // Корректный парсинг user_id
 
     if (isNaN(userId)) {
         return res.status(400).send('Неверный идентификатор пользователя');
     }
-    if (!discount || discount < 1 || discount > 100) {
+
+    // Убедитесь, что скидка, если она передается, также проверяется
+    // Если это не связано с удалением, можно убрать проверку скидки
+    const discount = req.body.discount; // Пример, если скидка передается в теле запроса
+    if (discount && (discount < 1 || discount > 100)) {
         return res.status(400).send('Процент скидки должен быть от 1 до 100');
     }
-    // Start by deleting the user's related data from other tables, if any exist
-    // For example, if there's a table for user orders or any related records
 
-    // If no related tables need to be deleted, proceed to remove the user
+    // Запрос на удаление пользователя
     const deleteUserQuery = 'DELETE FROM userskg WHERE user_id = ?';
     db.query(deleteUserQuery, [userId], (err, result) => {
         if (err) {
@@ -728,6 +730,7 @@ app.delete('/api/users/:user_id', (req, res) => {
             return res.status(500).send('Ошибка на сервере при удалении пользователя');
         }
 
+        // Проверка, был ли пользователь удален
         if (result.affectedRows === 0) {
             return res.status(404).send('Пользователь не найден');
         }
@@ -735,7 +738,6 @@ app.delete('/api/users/:user_id', (req, res) => {
         res.status(200).send('Пользователь успешно удален');
     });
 });
-
 
 
 // Функция для генерации промокода
