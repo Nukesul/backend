@@ -251,9 +251,11 @@ app.get('/api/send-order', async (req, res) => {
         // Вычисляем итоговую стоимость товаров без скидки
         const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
 
-        // Вычисляем сумму скидки (если есть)
-        const discountAmount = promoCodeUsed ? (totalWithoutDiscount * discount / 100) : 0;
-        const totalWithDiscount = totalWithoutDiscount - discountAmount;
+        // Вычисляем сумму скидки (если есть), не превышающую общую сумму
+        const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * discount / 100, totalWithoutDiscount) : 0;
+
+        // Итоговая сумма с учетом скидки (минимум 0 сом)
+        const totalWithDiscount = Math.max(totalWithoutDiscount - discountAmount, 0);
 
         // Округляем значения до двух знаков
         const roundedTotalWithoutDiscount = totalWithoutDiscount.toFixed(2);
@@ -278,7 +280,7 @@ ${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.pric
 
 💰 *Итоговая стоимость товаров*: ${roundedTotalWithoutDiscount} сом
 ${promoCodeUsed ? `💸 *Скидка с промокодом*: ${roundedDiscountAmount} сом` : '💸 Скидка не применена'}
-${promoCodeUsed ? `💰 *Итоговая сумма с промокодом*: ${roundedTotalWithDiscount} сом` : `💰 *Итоговая сумма*: ${roundedTotalWithoutDiscount} сом`}
+💰 *Итоговая сумма*: ${roundedTotalWithDiscount} сом
 `;
 
         // Отправка сообщения в Telegram
