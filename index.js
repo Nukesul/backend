@@ -698,10 +698,11 @@ app.post('/api/login', (req, res) => {
             return res.status(500).json({ message: 'Ошибка сервера при проверке пароля.' });
         }
     });
-});
-const authenticateToken = (req, res, next) => {
+});const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
+    
+    console.log('Токен из запроса:', token);
   
     if (!token) {
       return res.status(403).json({ message: 'Токен не найден. Доступ запрещен.' });
@@ -711,10 +712,11 @@ const authenticateToken = (req, res, next) => {
       if (err) {
         return res.status(403).json({ message: 'Недействительный токен.' });
       }
-      req.user = user; // Данные пользователя из токена
+      req.user = user; // Добавляем данные пользователя в запрос
       next();
     });
   };
+  
   
   // Получение данных пользователя
   app.get('/api/user', authenticateToken, (req, res) => {
