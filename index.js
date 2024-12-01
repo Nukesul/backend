@@ -245,31 +245,11 @@ app.get('/api/send-order', async (req, res) => {
         const orderDetails = JSON.parse(req.query.orderDetails);
         const deliveryDetails = JSON.parse(req.query.deliveryDetails);
         const cartItems = JSON.parse(req.query.cartItems);
-        let discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
+        const total = req.query.total || 'Не указано';
+const discountedTotal = req.query.discountedTotal || 'Не указано';
+const promoCodeUsed = req.query.promoCode ? true : false;
 
-        // Ограничиваем максимальную скидку
-        if (discount > 5) {
-            discount = 99; // Максимальная скидка 50%
-        }
-
-        const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
-
-        // Вычисляем итоговую стоимость товаров без скидки
-        const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
-
-        // Вычисляем сумму скидки (не превышает общую сумму)
-        const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * discount / 100, totalWithoutDiscount) : 0;
-
-        // Итоговая сумма с учетом скидки
-        const totalWithDiscount = Math.max(totalWithoutDiscount - discountAmount, 0);
-
-        // Округляем значения до двух знаков
-        const roundedTotalWithoutDiscount = totalWithoutDiscount.toFixed(2);
-        const roundedDiscountAmount = discountAmount.toFixed(2);
-        const roundedTotalWithDiscount = totalWithDiscount.toFixed(2);
-
-        // Формирование текста заказа для админа
-        const orderText = `
+const orderText = `
 📦 *Новый заказ:*
 👤 *Имя*: ${orderDetails.name || 'Нет'}
 📞 *Телефон*: ${orderDetails.phone || 'Нет'}
@@ -282,11 +262,11 @@ app.get('/api/send-order', async (req, res) => {
 📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
 
 🛒 *Товары:*
-${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.price} сом)`).join('\n')}
+${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
 
-💰 *Итоговая стоимость товаров*: ${roundedTotalWithoutDiscount} сом
-${promoCodeUsed ? `💸 *Скидка с промокодом*: ${roundedDiscountAmount} сом` : '💸 Скидка не применена'}
-💰 *Итоговая сумма*: ${roundedTotalWithDiscount} сом
+💰 *Итоговая стоимость товаров*: ${total} сом
+${promoCodeUsed ? `💸 *Скидка с промокодом*: ${discountedTotal} сом` : '💸 Скидка не применена'}
+💰 *Итоговая сумма*: ${discountedTotal} сом
 `;
 
         // Отправка сообщения в Telegram
