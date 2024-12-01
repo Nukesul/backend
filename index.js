@@ -241,48 +241,51 @@ app.delete('/api/products/:id', (req, res) => {
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
 app.get('/api/send-order', async (req, res) => {
-    const orderDetails = JSON.parse(req.query.orderDetails);
-    const deliveryDetails = JSON.parse(req.query.deliveryDetails);
-    const cartItems = JSON.parse(req.query.cartItems);
-    const discount = req.query.discount || 0;  // Получаем скидку
-    const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
-
-    // Вычисляем итоговую стоимость товаров без скидки
-    const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
-
-    // Вычисляем сумму скидки (если есть)
-    const discountAmount = promoCodeUsed ? totalWithoutDiscount * (discount / 100) : 0;
-
-    // Итоговая сумма с учетом скидки
-    const totalWithDiscount = totalWithoutDiscount - discountAmount;
-
-    // Формирование текста заказа для админа
-    const orderText = `
-      📦 Новый заказ:
-      👤 Имя: ${orderDetails.name || 'Нет'}
-      📞 Телефон: ${orderDetails.phone || 'Нет'}
-      📝 Комментарии: ${orderDetails.comments || 'Нет'}
-      
-      📦 Доставка:
-      🚚 Имя: ${deliveryDetails.name || 'Нет'}
-      📞 Телефон: ${deliveryDetails.phone || 'Нет'}
-      📍 Адрес: ${deliveryDetails.address || 'Нет'}
-      📝 Комментарии: ${deliveryDetails.comments || 'Нет'}
-
-      🛒 Товары:
-      ${cartItems.map(item => `${item.name} - ${item.quantity} шт. по ${item.price} сом`).join('\n')}
-
-      💰 Итоговая стоимость товаров: ${totalWithoutDiscount} сом
-
-      ${promoCodeUsed ? `💸 Скидка с промокодом: ${discountAmount.toFixed(2)} сом` : '💸 Скидка не применена'}
-
-      ${promoCodeUsed ? `💰 Итоговая сумма с промокодом: ${totalWithDiscount.toFixed(2)} сом` : `💰 Итоговая сумма: ${totalWithoutDiscount} сом`}
-    `;
-
     try {
+        const orderDetails = JSON.parse(req.query.orderDetails);
+        const deliveryDetails = JSON.parse(req.query.deliveryDetails);
+        const cartItems = JSON.parse(req.query.cartItems);
+        const discount = parseFloat(req.query.discount) || 0; // Получаем скидку как число
+        const promoCodeUsed = discount > 0; // Проверяем, был ли использован промокод
+
+        // Вычисляем итоговую стоимость товаров без скидки
+        const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+
+        // Вычисляем сумму скидки (если есть)
+        const discountAmount = promoCodeUsed ? (totalWithoutDiscount * discount / 100) : 0;
+        const totalWithDiscount = totalWithoutDiscount - discountAmount;
+
+        // Округляем значения до двух знаков
+        const roundedTotalWithoutDiscount = totalWithoutDiscount.toFixed(2);
+        const roundedDiscountAmount = discountAmount.toFixed(2);
+        const roundedTotalWithDiscount = totalWithDiscount.toFixed(2);
+
+        // Формирование текста заказа для админа
+        const orderText = `
+📦 *Новый заказ:*
+👤 *Имя*: ${orderDetails.name || 'Нет'}
+📞 *Телефон*: ${orderDetails.phone || 'Нет'}
+📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
+
+🚚 *Доставка:*
+👤 *Имя*: ${deliveryDetails.name || 'Нет'}
+📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
+📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
+📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
+
+🛒 *Товары:*
+${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.price} сом)`).join('\n')}
+
+💰 *Итоговая стоимость товаров*: ${roundedTotalWithoutDiscount} сом
+${promoCodeUsed ? `💸 *Скидка с промокодом*: ${roundedDiscountAmount} сом` : '💸 Скидка не применена'}
+${promoCodeUsed ? `💰 *Итоговая сумма с промокодом*: ${roundedTotalWithDiscount} сом` : `💰 *Итоговая сумма*: ${roundedTotalWithoutDiscount} сом`}
+`;
+
+        // Отправка сообщения в Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
             text: orderText,
+            parse_mode: "Markdown"
         });
 
         res.status(200).json({ message: 'Заказ отправлен в Telegram' });
@@ -295,7 +298,6 @@ app.get('/api/send-order', async (req, res) => {
         });
     }
 });
-
 // Эндпоинт /api/data
 app.get('/api/data', (req, res) => {
     const sql = `
