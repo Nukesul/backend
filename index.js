@@ -242,12 +242,12 @@ app.delete('/api/products/:id', (req, res) => {
 // Настройка маршрута для GET
 app.get('/api/send-order', async (req, res) => {
     try {
-        const orderDetails = JSON.parse(req.query.orderDetails);
-        const deliveryDetails = JSON.parse(req.query.deliveryDetails);
-        const cartItems = JSON.parse(req.query.cartItems);
-        const total = req.query.total || 'Не указано';
-const discountedTotal = req.query.discountedTotal || 'Не указано';
-const promoCodeUsed = req.query.promoCode ? true : false;
+        const orderDetails = req.query.orderDetails ? JSON.parse(req.query.orderDetails) : {};
+    const deliveryDetails = req.query.deliveryDetails ? JSON.parse(req.query.deliveryDetails) : {};
+    const cartItems = req.query.cartItems ? JSON.parse(req.query.cartItems) : [];
+    const total = req.query.total || 'Не указано';
+    const discountedTotal = req.query.discountedTotal || 'Не указано';
+    const promoCodeUsed = !!req.query.promoCode;
 
 const orderText = `
 📦 *Новый заказ:*
