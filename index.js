@@ -240,26 +240,19 @@ app.delete('/api/products/:id', (req, res) => {
 
 // Определение маршрута /api/send-order
 // Настройка маршрута для GET
+
 app.get('/api/send-order', async (req, res) => {
-    // Получаем все данные из запроса
-    const orderDetails = JSON.parse(req.query.orderDetails); // Данные о заказчике
-    const deliveryDetails = JSON.parse(req.query.deliveryDetails); // Данные о доставке
-    const cartItems = JSON.parse(req.query.cartItems); // Товары в корзине
-    const discount = parseFloat(req.query.discount) || 0; // Скидка (в процентах)
-    const promoCodeUsed = discount > 0; // Проверка, был ли использован промокод
+  const orderDetails = JSON.parse(req.query.orderDetails);
+  const deliveryDetails = JSON.parse(req.query.deliveryDetails);
+  const cartItems = JSON.parse(req.query.cartItems);
+  const discount = parseFloat(req.query.discount) || 0;
+  const promoCodeUsed = discount > 0;
 
-    // 1. Рассчитываем итоговую стоимость товаров без скидки
-    const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  const totalWithoutDiscount = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * (discount / 100), totalWithoutDiscount) : 0;
+  const totalWithDiscount = totalWithoutDiscount - discountAmount;
 
-    // 2. Если промокод использован, рассчитываем сумму скидки
-    // Убедимся, что скидка не превышает 100%
-    const discountAmount = promoCodeUsed ? Math.min(totalWithoutDiscount * (discount / 100), totalWithoutDiscount) : 0;
-
-    // 3. Итоговая сумма с учетом скидки
-    const totalWithDiscount = totalWithoutDiscount - discountAmount;
-
-    // Формирование текста для отправки в Telegram
-    const orderText = `
+  const orderText = `
     *📦 Новый заказ:*
     👤 *Имя:* ${orderDetails.name || 'Не указано'}
     📞 *Телефон:* ${orderDetails.phone || 'Не указан'}
@@ -276,30 +269,27 @@ app.get('/api/send-order', async (req, res) => {
 
     *💰 Итоговая стоимость товаров:* ${totalWithoutDiscount.toFixed(2)} сом
 
-    ${promoCodeUsed ? `*💸 Скидка с промокодом:* ${discountAmount.toFixed(2)} сом` : '*💸 Скидка не применена*'}
+    ${promoCodeUsed ? `*💸 Скидка с промокодом:* ${discountAmount.toFixed(2)} сом` : ''}
+    *💵 Итого с учетом скидки:* ${totalWithDiscount.toFixed(2)} сом
+  `;
 
-    *💰 Итоговая сумма:*
-    ${promoCodeUsed ? totalWithDiscount.toFixed(2) : totalWithoutDiscount.toFixed(2)} сом
-    `;
+  // Send order text to Telegram
+  const telegramToken = 'your-telegram-bot-token';
+  const chatId = 'your-chat-id';
+  const url = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
 
-    // Отправка сообщения в Telegram
-    try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: orderText,
-            parse_mode: 'Markdown' // Используем Markdown для форматирования
-        });
+  try {
+    await axios.post(url, {
+      chat_id: chatId,
+      text: orderText,
+      parse_mode: 'Markdown',
+    });
 
-        // Ответ от сервера о том, что заказ успешно отправлен
-        res.status(200).json({ message: 'Заказ отправлен в Telegram' });
-
-    } catch (error) {
-        console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
-        res.status(500).json({
-            message: 'Ошибка отправки заказа',
-            error: error.response ? error.response.data : error.message
-        });
-    }
+    res.status(200).json({ message: 'Order sent successfully!' });
+  } catch (error) {
+    console.error('Error sending order to Telegram:', error);
+    res.status(500).json({ message: 'Failed to send order to Telegram.' });
+  }
 });
 
 // Эндпоинт /api/data
