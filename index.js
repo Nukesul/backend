@@ -639,9 +639,7 @@ app.get('/api/user', (req, res) => {
             });
         });
     });
-});
-// API для входа пользователя
-app.post('/api/login', (req, res) => {
+});app.post('/api/login', (req, res) => {
     const { email, password } = req.body;
 
     // Проверка на наличие обязательных полей
@@ -699,8 +697,6 @@ app.post('/api/login', (req, res) => {
         }
     });
 });
-
-
 
 // Маршрут для получения всех пользователей
 app.get('/api/users', (req, res) => {
