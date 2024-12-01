@@ -702,20 +702,18 @@ app.post('/api/login', (req, res) => {
 
 
 
+// Маршрут для получения всех пользователей
+app.get('/api/users', (req, res) => {
+    const query = 'SELECT * FROM userskg';
 
-app.get('/api/user', (req, res) => {
-  const token = req.headers['authorization']?.split(' ')[1]; // Extract token from Authorization header
-  if (!token) {
-    return res.status(403).send('Token is missing');
-  }
-  
-  jwt.verify(token, 'your-secret-key', (err, user) => {
-    if (err) {
-      return res.status(403).send('Token is invalid or expired');
-    }
-    req.user = user; // Store decoded user info in request object
-    // Continue processing the request
-  });
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Ошибка при выполнении запроса:', err);
+            res.status(500).send('Ошибка сервера');
+            return;
+        }
+        res.json(results); // Отправка данных в ответе
+    });
 });
 
 app.delete('/api/users/:user_id', (req, res) => {
