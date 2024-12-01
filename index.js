@@ -701,22 +701,7 @@ app.post('/api/login', (req, res) => {
 });
 
 
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-  
-    if (!token) {
-      return res.status(403).json({ message: 'Токен не найден. Доступ запрещен.' });
-    }
-  
-    jwt.verify(token, 'your_secret_key', (err, user) => {
-      if (err) {
-        return res.status(403).json({ message: 'Недействительный токен.' });
-      }
-      req.user = user; // Добавляем данные пользователя в запрос
-      next();
-    });
-  };
+
 // Маршрут для получения всех пользователей
 app.get('/api/user', authenticateToken, (req, res) => {
     const userId = req.user.user_id; // ID пользователя из токена
