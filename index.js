@@ -250,7 +250,6 @@ const discountedTotal = total * (1 - discount / 100);
 // Округляем до двух знаков после запятой
 const roundedTotal = total.toFixed(2);
 const roundedDiscountedTotal = discountedTotal.toFixed(2);
-
 const orderText = `
   📦 *Новый заказ:*
   👤 *Имя*: ${orderDetails.name || 'Нет'}
@@ -267,7 +266,7 @@ const orderText = `
   ${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
 
   💰 *Итоговая стоимость товаров*: ${roundedTotal} сом
-  ${promoCode ? `💸 *Скидка с промокодом*: ${roundedDiscountedTotal} сом` : '💸 Скидка не применена'}
+  ${promoCode ? `💸 *Скидка (${discount}%): ${roundedDiscountedTotal} сом` : '💸 Скидка не применена'}
   💰 *Итоговая сумма*: ${roundedDiscountedTotal} сом
 `;
 
