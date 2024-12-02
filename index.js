@@ -592,6 +592,7 @@ app.post('/api/confirm-code', async (req, res) => {
 });
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
+// Защищенный маршрут для получения информации о пользователе
 app.get('/api/user', (req, res) => {
     // Извлечение токена из заголовка Authorization
     const token = req.headers['authorization']?.split(' ')[1];
@@ -615,8 +616,7 @@ app.get('/api/user', (req, res) => {
             phone, 
             balance 
         FROM userskg 
-        WHERE user_id = ?
-    `;
+        WHERE user_id = ?`;
     
         db.query(sql, [decoded.user_id], (error, results) => {
             if (error) {
@@ -639,7 +639,8 @@ app.get('/api/user', (req, res) => {
             });
         });
     });
-});app.post('/api/login', (req, res) => {
+});
+app.post('/api/login', (req, res) => {
     const { email, password } = req.body;
 
     // Проверка на наличие обязательных полей
@@ -680,17 +681,18 @@ app.get('/api/user', (req, res) => {
             }
 
             // Если токена нет, создаем новый, сохраняем и возвращаем
-            const token = jwt.sign({ user_id: user.user_id }, secretKey, { expiresIn: '1h' });
+            const token = jwt.sign({ user_id: user.user_id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
             const updateTokenQuery = 'UPDATE userskg SET token = ? WHERE user_id = ?';
             db.query(updateTokenQuery, [token, user.user_id], (error) => {
                 if (error) {
-                    console.error('Ошибка при сохранении токена:', error);
+                    console.error('Ошибка при обновлении токена:', error);
                     return res.status(500).json({ message: 'Ошибка при сохранении токена' });
                 }
-
-                res.json({ message: 'Вход успешен', token, userId: user.user_id });
+            
+                res.json({ message: 'Вход успешен', token });
             });
+            
         } catch (err) {
             console.error('Ошибка при сравнении пароля:', err);
             return res.status(500).json({ message: 'Ошибка сервера при проверке пароля.' });
