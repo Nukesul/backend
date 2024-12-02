@@ -239,56 +239,57 @@ app.delete('/api/products/:id', (req, res) => {
 });
 
 // Определение маршрута /api/send-order
-// Настройка маршрута для GET
+// Настройка маршрута для POST
 app.post('/api/send-order', async (req, res) => {
     try {
-      const { orderDetails, deliveryDetails, cartItems, discount, promoCode } = req.body;
-  
-      const total = cartItems.reduce((sum, item) => sum + item.originalPrice * item.quantity, 0);
-const discountedTotal = total * (1 - discount / 100);
+        const { orderDetails, deliveryDetails, cartItems, discount, promoCode } = req.body;
 
-// Округляем до двух знаков после запятой
-const roundedTotal = total.toFixed(2);
-const roundedDiscountedTotal = discountedTotal.toFixed(2);
+        // Расчет общей стоимости
+        const total = cartItems.reduce((sum, item) => sum + item.originalPrice * item.quantity, 0);
+        const discountedTotal = total * (1 - discount / 100);
 
-const orderText = `
-  📦 *Новый заказ:*
-  👤 *Имя*: ${orderDetails.name || 'Нет'}
-  📞 *Телефон*: ${orderDetails.phone || 'Нет'}
-  📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
+        // Округление итоговых сумм
+        const roundedTotal = total.toFixed(2);
+        const roundedDiscountedTotal = discountedTotal.toFixed(2);
 
-  🚚 *Доставка:*
-  👤 *Имя*: ${deliveryDetails.name || 'Нет'}
-  📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
-  📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
-  📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
+        // Формирование текста заказа
+        const orderText = `
+📦 *Новый заказ:*
+👤 *Имя*: ${orderDetails.name || 'Нет'}
+📞 *Телефон*: ${orderDetails.phone || 'Нет'}
+📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
 
-  🛒 *Товары:*
-  ${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
+🚚 *Доставка:*
+👤 *Имя*: ${deliveryDetails.name || 'Нет'}
+📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
+📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
+📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
 
-  💰 *Итоговая стоимость товаров*: ${roundedTotal} сом
-  ${promoCode ? `💸 *Скидка с промокодом*: ${roundedDiscountedTotal} сом` : '💸 Скидка не применена'}
-  💰 *Итоговая сумма*: ${roundedDiscountedTotal} сом
-`;
+🛒 *Товары:*
+${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
 
+💰 *Итоговая стоимость товаров*: ${roundedTotal} сом
+${promoCode ? `💸 *Скидка по промокоду (${discount}%):* ${roundedDiscountedTotal} сом` : '💸 Скидка не применена'}
+💰 *Итоговая сумма*: ${roundedDiscountedTotal} сом
+        `;
 
         // Отправка сообщения в Telegram
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
             text: orderText,
-            parse_mode: "Markdown"
+            parse_mode: "Markdown",
         });
 
         res.status(200).json({ message: 'Заказ отправлен в Telegram' });
-
     } catch (error) {
         console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Ошибка отправки заказа',
-            error: error.response ? error.response.data : error.message 
+            error: error.response ? error.response.data : error.message,
         });
     }
 });
+
 // Эндпоинт /api/data
 app.get('/api/data', (req, res) => {
     const sql = `
