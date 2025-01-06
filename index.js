@@ -105,44 +105,61 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-
-// Обработчик для добавления продукта и цен
 app.post('/api/products', upload.single('image'), (req, res) => {
-  const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-  // Проверка на обязательные поля
-  if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно' });
-  if (!category) return res.status(400).json({ error: 'Категория обязательна' });
+    // Если id предоставлен, обновляем существующий продукт
+    if (id) {
+        const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
+        db.query(getProductQuery, [id], (err, results) => {
+            if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
 
-  // Запрос для добавления продукта
-  const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
-  const productValues = [name, description, category, subCategory, imageUrl];
+            const existingImageUrl = results[0]?.image_url;
 
-  db.beginTransaction((err) => {
-    if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+            // Если новое изображение не предоставлено, оставляем старое
+            const updatedImageUrl = imageUrl || existingImageUrl;
 
-    db.query(productSql, productValues, (err, result) => {
-      if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
-
-      const productId = result.insertId;
-
-      // Запрос для добавления цен
-      const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-      const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
-
-      db.query(priceSql, priceValues, (err) => {
-        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
-
-        db.commit((err) => {
-          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-          res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
+            const updateProductQuery = `
+                UPDATE products 
+                SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
+                WHERE id = ?
+            `;
+            db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
+                if (err) return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
+                res.status(200).json({ message: 'Продукт успешно обновлен!' });
+            });
         });
-      });
-    });
-  });
-});
+    } else {
+        // Если id нет, добавляем новый продукт
+        if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
 
+        const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
+        const productValues = [name, description, category, subCategory, imageUrl];
+
+        db.beginTransaction((err) => {
+            if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+
+            db.query(productSql, productValues, (err, result) => {
+                if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+
+                const productId = result.insertId;
+
+                const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
+                const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
+
+                db.query(priceSql, priceValues, (err) => {
+                    if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+
+                    db.commit((err) => {
+                        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+                        res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
+                    });
+                });
+            });
+        });
+    }
+});
 
 
   app.get('/api/products', (req, res) => {
