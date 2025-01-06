@@ -808,7 +808,7 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         <p>Ваш уникальный промокод:</p>
                         <p style="font-size: 24px; font-weight: bold; color: #FFD700;">${promoCode}</p>
                         <p>Скидка: <strong>${discount}%</strong></p>
-                        <p>Промокод действителен 24 часа с момента получения.</p>
+                        <p>Промокод действителен 7 дней с момента получения.</p>
                         <p>Спасибо, что выбрали Boodya Pizza!</p>
                     </div>
                     `,
@@ -827,52 +827,50 @@ app.post('/api/users/:user_id/promo', (req, res) => {
     });
 });
 
-
 // API для проверки промокода
 app.post('/api/validate-promo', (req, res) => {
     const { promoCode } = req.body;
-  
+
     console.log("Получен промокод:", promoCode); // Логируем промокод
-  
+
     if (!promoCode) {
-      return res.status(400).json({ message: 'Промокод не может быть пустым.' });
+        return res.status(400).json({ message: 'Промокод не может быть пустым.' });
     }
-  
+
     const query = 'SELECT * FROM userskg WHERE promo_code = ?';
     db.query(query, [promoCode], (err, results) => {
-      if (err) {
-        console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
-        return res.status(500).json({ message: 'Ошибка сервера', error: err });
-      }
-  
-      if (results.length === 0) {
-        return res.status(400).json({ message: 'Неверный промокод.' });
-      }
-  
-      const promoCodeDetails = results[0];
-      const currentDate = new Date();
-      const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
-  
-      // Проверяем срок действия промокода
-      const expiryDate = new Date(promoCodeCreatedAt.getTime() + 24 * 60 * 60 * 1000); // 24 часа с момента создания
-  
-      if (currentDate > expiryDate) {
-        return res.status(400).json({ message: 'Промокод истек.' });
-      }
-  
-      // Получаем значение скидки из базы данных
-      const discount = promoCodeDetails.discount;
-  
-      if (!discount || discount <= 0) {
-        return res.status(400).json({ message: 'Скидка недействительна для данного промокода.' });
-      }
-  
-      // Промокод действителен, возвращаем скидку
-      res.json({ discount: discount });
+        if (err) {
+            console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
+            return res.status(500).json({ message: 'Ошибка сервера', error: err });
+        }
+
+        if (results.length === 0) {
+            return res.status(400).json({ message: 'Неверный промокод.' });
+        }
+
+        const promoCodeDetails = results[0];
+        const currentDate = new Date();
+        const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
+
+        // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
+        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        if (currentDate > expiryDate) {
+            return res.status(400).json({ message: 'Промокод истек.' });
+        }
+
+        // Получаем значение скидки из базы данных
+        const discount = promoCodeDetails.discount;
+
+        if (!discount || discount <= 0) {
+            return res.status(400).json({ message: 'Скидка недействительна для данного промокода.' });
+        }
+
+        // Промокод действителен, возвращаем скидку
+        res.json({ discount: discount });
     });
-  });
-  
-  
+});
+
   
   // API для аутентификации пользователя через user_id
   app.post('/api/authenticate', (req, res) => {
