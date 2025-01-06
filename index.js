@@ -879,7 +879,7 @@ app.post('/api/validate-promo', (req, res) => {
         const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
 
         // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
-        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 8 * 24 * 60 * 60 * 1000);
+        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
 
         if (currentDate > expiryDate) {
             return res.status(400).json({ message: 'Промокод истек.' });
