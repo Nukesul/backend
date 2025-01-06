@@ -834,7 +834,7 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         <p>Ваш уникальный промокод:</p>
                         <p style="font-size: 24px; font-weight: bold; color:rgb(255, 111, 0);">${promoCode}</p>
                         <p>Скидка: <strong>${discount}%</strong></p>
-                        <p>Промокод действителен 9 дней с момента получения.</p>
+                        <p>Промокод действителен 7 дней с момента получения.</p>
                         <p>Спасибо, что выбрали Boodya Pizza!</p>
                     </div>
                     `,
