@@ -2,85 +2,94 @@ const express = require('express');
 const mysql = require('mysql');
 const multer = require('multer');
 const path = require('path');
+const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const router = express.Router();
 const crypto = require('crypto');
 const cors = require('cors');
-require('dotenv').config(); // Для загрузки переменных окружения из .env
-const fs = require('fs');
+require('dotenv').config();
+const nodemailer = require('nodemailer');
+
 const app = express();
 
-// Настройка переменных окружения для Telegram
+// Используйте переменные окружения для Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Данные для моков (mockData)
 const mockData = {
-    cartItems: [
-        { id: 1, name: "Pizza Margherita", quantity: 2, price: 10 },
-        { id: 2, name: "Pizza Pepperoni", quantity: 1, price: 12 },
-    ],
+  cartItems: [
+    { id: 1, name: "Pizza Margherita", quantity: 2, price: 10 },
+    { id: 2, name: "Pizza Pepperoni", quantity: 1, price: 12 },
+  ],
 };
 
-// Настройка CORS
 app.use(cors({
-    origin: 'https://boodaikg.com',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
+  origin: 'https://boodaikg.com',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
 }));
 
 app.use(bodyParser.json());
+const secretKey = 'ваш_секретный_ключ';
 
-// Настройка подключения к базе данных MySQL
+// Настройка базы данных
 const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
+});
+
+app.get('/', (req, res) => {
+  res.send('Сервер работает!');
 });
 
 // Проверка соединения с базой данных
 db.connect(async (err) => {
-    if (err) {
-        console.error('Ошибка подключения к базе данных:', err.message);
-        return;
+  if (err) {
+    console.error('Ошибка подключения к базе данных:', err.message);
+    return;
+  }
+  console.log('Подключено к базе данных MySQL');
+
+  // Проверка на наличие администратора
+  const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
+  db.query(checkAdminQuery, async (error, results) => {
+    if (error) {
+      console.error('Ошибка проверки администратора:', error);
+      return;
     }
-    console.log('Подключено к базе данных MySQL');
 
-    // Проверка на наличие администратора
-    const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
-    db.query(checkAdminQuery, async (error, results) => {
+    if (results.length === 0) {
+      // Если нет администратора, создаём нового
+      const generatedUsername = 'admin';
+      const generatedPassword = crypto.randomBytes(8).toString('hex');
+      const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+      // Генерация токена
+      const generatedToken = crypto.randomBytes(32).toString('hex');
+
+      const insertAdminQuery = 'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
+      db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, generatedToken, '1234567890', 'DefaultCountry', 'male'], (error) => {
         if (error) {
-            console.error('Ошибка проверки администратора:', error);
-            return;
+          console.error('Ошибка при создании администратора:', error);
+          return;
         }
-
-        if (results.length === 0) {
-            // Если нет администратора, создаём нового
-            const generatedUsername = 'admin';
-            const generatedPassword = crypto.randomBytes(8).toString('hex');
-            const hashedPassword = await bcrypt.hash(generatedPassword, 10);
-
-            const generatedToken = crypto.randomBytes(32).toString('hex'); // Генерация случайного токена
-
-            const insertAdminQuery = 'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
-            db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, generatedToken, '1234567890', 'DefaultCountry', 'male'], (error) => {
-                if (error) {
-                    console.error('Ошибка при создании администратора:', error);
-                    return;
-                }
-                console.log(`Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`);
-            });
-        } else {
-            console.log('Администратор уже существует');
-        }
-    });
+        console.log(`Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`);
+      });
+    } else {
+      console.log('Администратор уже существует');
+    }
+  });
 });
 
-// Проверка наличия папки для загрузки изображений
 const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
+  fs.mkdirSync(uploadDir);
 }
 
 // Настройка статической раздачи для загруженных изображений
@@ -88,62 +97,50 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir); // Папка для сохранения изображений
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя для каждого файла
-    },
+  destination: (req, file, cb) => {
+    cb(null, uploadDir); // Папка для сохранения изображений
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя для каждого файла
+  },
 });
-
 const upload = multer({ storage });
 
 // Обработчик для добавления продукта и цен
 app.post('/api/products', upload.single('image'), (req, res) => {
-    const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-    // Проверка на обязательные поля
-    if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно' });
-    if (!category) return res.status(400).json({ error: 'Категория обязательна' });
+  // Проверка на обязательные поля
+  if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно' });
+  if (!category) return res.status(400).json({ error: 'Категория обязательна' });
 
-    // Запрос для добавления продукта
-    const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
-    const productValues = [name, description, category, subCategory, imageUrl];
+  // Запрос для добавления продукта
+  const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
+  const productValues = [name, description, category, subCategory, imageUrl];
 
-    db.beginTransaction((err) => {
-        if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+  db.beginTransaction((err) => {
+    if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
 
-        db.query(productSql, productValues, (err, result) => {
-            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+    db.query(productSql, productValues, (err, result) => {
+      if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
 
-            const productId = result.insertId;
+      const productId = result.insertId;
 
-            // Запрос для добавления цен
-            const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-            const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
+      // Запрос для добавления цен
+      const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
+      const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
 
-            db.query(priceSql, priceValues, (err) => {
-                if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+      db.query(priceSql, priceValues, (err) => {
+        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
 
-                db.commit((err) => {
-                    if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-                    res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
-                });
-            });
+        db.commit((err) => {
+          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+          res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
         });
+      });
     });
-});
-
-// Ответ на главный запрос
-app.get('/', (req, res) => {
-    res.send('Сервер работает!');
-});
-
-// Запуск сервера
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Сервер работает на порту ${PORT}`);
+  });
 });
 
 
