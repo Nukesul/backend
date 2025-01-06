@@ -815,7 +815,7 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                     <div style="background-color: #000; color: #fff; text-align: center; padding: 20px; font-family: Arial;">
                         <h1 style="color: #FFD700;">Boodya Pizza</h1>
                         <p>Ваш уникальный промокод:</p>
-                        <p style="font-size: 24px; font-weight: bold; color: #FFD700;">${promoCode}</p>
+                        <p style="font-size: 24px; font-weight: bold; color:rgb(255, 111, 0);">${promoCode}</p>
                         <p>Скидка: <strong>${discount}%</strong></p>
                         <p>Промокод действителен 7 дней с момента получения.</p>
                         <p>Спасибо, что выбрали Boodya Pizza!</p>
@@ -862,7 +862,7 @@ app.post('/api/validate-promo', (req, res) => {
         const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
 
         // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
-        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 8 * 24 * 60 * 60 * 1000);
 
         if (currentDate > expiryDate) {
             return res.status(400).json({ message: 'Промокод истек.' });
