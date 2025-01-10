@@ -600,7 +600,7 @@ app.post('/api/confirm-code', async (req, res) => {
         });
 
         // Создание JWT токена
-        const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
 
         // Сохранение токена в базу данных (если нужно)
         await new Promise((resolve, reject) => {
@@ -897,15 +897,16 @@ app.post('/api/validate-promo', (req, res) => {
     });
 });
 
-  
   // API для аутентификации пользователя через user_id
-  app.post('/api/authenticate', (req, res) => {
+app.post('/api/authenticate', (req, res) => {
     const { user_id } = req.body;
 
+    // Проверка на наличие user_id в теле запроса
     if (!user_id) {
         return res.status(400).json({ error: "User ID is required" });
     }
 
+    // SQL запрос для поиска пользователя по user_id
     const query = 'SELECT * FROM userskg WHERE user_id = ?';
     db.query(query, [user_id], (err, results) => {
         if (err) {
@@ -917,7 +918,7 @@ app.post('/api/validate-promo', (req, res) => {
             return res.status(404).json({ error: "Пользователь не найден" });
         }
 
-        // Например, возвращаем информацию о пользователе или промокод
+        // Возвращаем информацию о пользователе и промокод
         res.json({ 
             promoCode: results[0].promoCode || null, 
             user: results[0] 
