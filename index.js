@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const AWS = require('aws-sdk');
 const multerS3 = require('multer-s3');
+const db = require('./db');
 const router = express.Router();
 const crypto = require('crypto');
 const cors = require('cors');
