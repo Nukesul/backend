@@ -21,13 +21,6 @@ const app = express();
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Данные для моков (mockData)
-const mockData = {
-  cartItems: [
-    { id: 1, name: "Pizza Margherita", quantity: 2, price: 10 },
-    { id: 2, name: "Pizza Pepperoni", quantity: 1, price: 12 },
-  ],
-};
 
 app.use(cors({
   origin: 'https://boodaikg.com',
