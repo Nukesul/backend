@@ -68,7 +68,6 @@ db.connect(async (err) => {
     }
 
     if (results.length === 0) {
-      // Если нет администратора, создаём нового
       const generatedUsername = 'admin';
       const generatedPassword = crypto.randomBytes(8).toString('hex');
       const hashedPassword = await bcrypt.hash(generatedPassword, 10);
