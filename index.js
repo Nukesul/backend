@@ -41,11 +41,12 @@ const secretKey = 'ваш_секретный_ключ';
 
 // Настройка базы данных
 const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME
 });
+
 
 app.get('/', (req, res) => {
   res.send('Сервер работает!');
@@ -88,7 +89,7 @@ db.connect(async (err) => {
     }
   });
 });
-
+    
 // Настройка S3
 const s3 = new AWS.S3({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
