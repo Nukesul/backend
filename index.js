@@ -7,6 +7,9 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
+const AWS = require('aws-sdk');
+const multerS3 = require('multer-s3');
+const db = require('./db');
 const router = express.Router();
 const crypto = require('crypto');
 const cors = require('cors');
@@ -87,37 +90,36 @@ db.connect(async (err) => {
   });
 });
 
-const uploadDir = './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+// Настройка S3
+const s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION
+});
 
-// Настройка статической раздачи для загруженных изображений
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Настройка multer для загрузки файлов
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir); // Папка для сохранения изображений
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя для каждого файла
-  },
+// Настройка Multer для загрузки в S3
+const storage = multerS3({
+    s3: s3,
+    bucket: process.env.AWS_BUCKET_NAME,
+    acl: 'public-read', // Публичный доступ к файлам (можно настроить по необходимости)
+    metadata: (req, file, cb) => {
+        cb(null, { fieldName: file.fieldname });
+    },
+    key: (req, file, cb) => {
+        cb(null, `products/${Date.now()}${path.extname(file.originalname)}`); // Уникальное имя для каждого файла
+    }
 });
 const upload = multer({ storage });
 app.post('/api/products', upload.single('image'), (req, res) => {
     const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const imageUrl = req.file ? req.file.location : null; // Получаем URL из S3
 
-    // Если id предоставлен, обновляем существующий продукт
     if (id) {
         const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
         db.query(getProductQuery, [id], (err, results) => {
             if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
 
             const existingImageUrl = results[0]?.image_url;
-
-            // Если новое изображение не предоставлено, оставляем старое
             const updatedImageUrl = imageUrl || existingImageUrl;
 
             const updateProductQuery = `
@@ -131,7 +133,6 @@ app.post('/api/products', upload.single('image'), (req, res) => {
             });
         });
     } else {
-        // Если id нет, добавляем новый продукт
         if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
 
         const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
@@ -160,8 +161,6 @@ app.post('/api/products', upload.single('image'), (req, res) => {
         });
     }
 });
-
-
   app.get('/api/products', (req, res) => {
     const sql = `
         SELECT 
