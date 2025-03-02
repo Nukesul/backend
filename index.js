@@ -12,8 +12,6 @@ const crypto = require('crypto');
 const cors = require('cors');
 require('dotenv').config();
 const nodemailer = require('nodemailer');
-const AWS = require('aws-sdk');
-const multerS3 = require('multer-s3');
 
 const app = express();
 
@@ -83,85 +81,87 @@ db.connect(async (err) => {
         }
         console.log(`Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`);
       });
+    } else {
+      console.log('Администратор уже существует');
     }
   });
 });
 
-// Настройка S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
-});
+const uploadDir = './uploads';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
-// Настройка multer для загрузки файлов в S3
-const upload = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.AWS_S3_BUCKET,
-    acl: 'public-read', // Разрешение на публичный доступ
-    key: function (req, file, cb) {
-      cb(null, Date.now().toString() + '-' + file.originalname); // Генерация уникального имени файла
-    }
-  })
-});
+// Настройка статической раздачи для загруженных изображений
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// API маршрут для добавления/обновления продукта с изображением на S3
+// Настройка multer для загрузки файлов
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir); // Папка для сохранения изображений
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя для каждого файла
+  },
+});
+const upload = multer({ storage });
 app.post('/api/products', upload.single('image'), (req, res) => {
-  const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-  const imageUrl = req.file ? req.file.location : null; // URL изображения на S3
+    const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-  // Если id предоставлен, обновляем существующий продукт
-  if (id) {
-    const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
-    db.query(getProductQuery, [id], (err, results) => {
-      if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
+    // Если id предоставлен, обновляем существующий продукт
+    if (id) {
+        const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
+        db.query(getProductQuery, [id], (err, results) => {
+            if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
 
-      const existingImageUrl = results[0]?.image_url;
+            const existingImageUrl = results[0]?.image_url;
 
-      // Если новое изображение не предоставлено, оставляем старое
-      const updatedImageUrl = imageUrl || existingImageUrl;
+            // Если новое изображение не предоставлено, оставляем старое
+            const updatedImageUrl = imageUrl || existingImageUrl;
 
-      const updateProductQuery = `
-        UPDATE products 
-        SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
-        WHERE id = ?
-      `;
-      db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
-        if (err) return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
-        res.status(200).json({ message: 'Продукт успешно обновлен!' });
-      });
-    });
-  } else {
-    // Если id нет, добавляем новый продукт
-    if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
-
-    const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
-    const productValues = [name, description, category, subCategory, imageUrl];
-
-    db.beginTransaction((err) => {
-      if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
-
-      db.query(productSql, productValues, (err, result) => {
-        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
-
-        const productId = result.insertId;
-
-        const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-        const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
-
-        db.query(priceSql, priceValues, (err) => {
-          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
-
-          db.commit((err) => {
-            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-            res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
-          });
+            const updateProductQuery = `
+                UPDATE products 
+                SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
+                WHERE id = ?
+            `;
+            db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
+                if (err) return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
+                res.status(200).json({ message: 'Продукт успешно обновлен!' });
+            });
         });
-      });
-    });
-  }
+    } else {
+        // Если id нет, добавляем новый продукт
+        if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
+
+        const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
+        const productValues = [name, description, category, subCategory, imageUrl];
+
+        db.beginTransaction((err) => {
+            if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+
+            db.query(productSql, productValues, (err, result) => {
+                if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+
+                const productId = result.insertId;
+
+                const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
+                const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
+
+                db.query(priceSql, priceValues, (err) => {
+                    if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+
+                    db.commit((err) => {
+                        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+                        res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
+                    });
+                });
+            });
+        });
+    }
 });
+
+
   app.get('/api/products', (req, res) => {
     const sql = `
         SELECT 
