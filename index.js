@@ -2,7 +2,6 @@ const express = require('express');
 const mysql = require('mysql');
 const multer = require('multer');
 const path = require('path');
-const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
@@ -10,16 +9,13 @@ const fs = require('fs');
 const router = express.Router();
 const crypto = require('crypto');
 const cors = require('cors');
+const AWS = require('aws-sdk');
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const app = express();
 
-// Используйте переменные окружения для Telegram
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-
+// CORS для фронтенда
 app.use(cors({
   origin: 'https://boodaikg.com',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -80,80 +76,107 @@ db.connect(async (err) => {
   });
 });
 
+// Настройка AWS S3
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
+});
+
 const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-// Настройка статической раздачи для загруженных изображений
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir); // Папка для сохранения изображений
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя для каждого файла
+    cb(null, Date.now() + path.extname(file.originalname));
   },
 });
 const upload = multer({ storage });
-app.post('/api/products', upload.single('image'), (req, res) => {
-    const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-    // Если id предоставлен, обновляем существующий продукт
-    if (id) {
-        const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
-        db.query(getProductQuery, [id], (err, results) => {
-            if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
+// Функция для загрузки файла на S3
+const uploadFileToS3 = (file) => {
+  const fileContent = fs.readFileSync(file.path);
+  const params = {
+    Bucket: process.env.S3_BUCKET,
+    Key: `uploads/${file.filename}`, // Уникальное имя файла в S3
+    Body: fileContent,
+    ACL: 'public-read', // Доступ к файлу (можно настроить по-другому)
+  };
 
-            const existingImageUrl = results[0]?.image_url;
+  return s3.upload(params).promise();
+};
 
-            // Если новое изображение не предоставлено, оставляем старое
-            const updatedImageUrl = imageUrl || existingImageUrl;
+// Маршрут для добавления/обновления продуктов
+app.post('/api/products', upload.single('image'), async (req, res) => {
+  const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+  let imageUrl = null;
 
-            const updateProductQuery = `
-                UPDATE products 
-                SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
-                WHERE id = ?
-            `;
-            db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
-                if (err) return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
-                res.status(200).json({ message: 'Продукт успешно обновлен!' });
-            });
-        });
-    } else {
-        // Если id нет, добавляем новый продукт
-        if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
-
-        const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
-        const productValues = [name, description, category, subCategory, imageUrl];
-
-        db.beginTransaction((err) => {
-            if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
-
-            db.query(productSql, productValues, (err, result) => {
-                if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
-
-                const productId = result.insertId;
-
-                const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-                const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
-
-                db.query(priceSql, priceValues, (err) => {
-                    if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
-
-                    db.commit((err) => {
-                        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-                        res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
-                    });
-                });
-            });
-        });
+  try {
+    // Если есть загруженный файл, отправляем его на S3
+    if (req.file) {
+      const s3Response = await uploadFileToS3(req.file);
+      imageUrl = s3Response.Location; // URL файла на S3
+      fs.unlinkSync(req.file.path); // Удаляем локальный файл после загрузки
     }
-});
 
+    if (id) {
+      // Обновление существующего продукта
+      const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
+      db.query(getProductQuery, [id], (err, results) => {
+        if (err) return res.status(500).json({ error: 'Ошибка при получении продукта' });
+
+        const existingImageUrl = results[0]?.image_url;
+        const updatedImageUrl = imageUrl || existingImageUrl;
+
+        const updateProductQuery = `
+          UPDATE products 
+          SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
+          WHERE id = ?
+        `;
+        db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
+          if (err) return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
+          res.status(200).json({ message: 'Продукт успешно обновлен!' });
+        });
+      });
+    } else {
+      // Добавление нового продукта
+      if (!imageUrl) return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
+
+      const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
+      const productValues = [name, description, category, subCategory, imageUrl];
+
+      db.beginTransaction((err) => {
+        if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
+
+        db.query(productSql, productValues, (err, result) => {
+          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+
+          const productId = result.insertId;
+
+          const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
+          const priceValues = [productId, priceSmall, price, priceMedium, priceLarge];
+
+          db.query(priceSql, priceValues, (err) => {
+            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+
+            db.commit((err) => {
+              if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+              res.status(201).json({ message: 'Продукт и цены успешно добавлены!' });
+            });
+          });
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке на S3:', error);
+    res.status(500).json({ error: 'Ошибка сервера при обработке изображения' });
+  }
+});
 
   app.get('/api/products', (req, res) => {
     const sql = `
