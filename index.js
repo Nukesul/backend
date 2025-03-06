@@ -75,17 +75,11 @@ db.connect(async (err) => {
     }
   });
 });
+// Настройка Multer для сохранения файлов в папку на сервере
+const uploadDir = '../images_store'; // Путь относительно корня проекта (на одном уровне с public_html)
 
-// Настройка AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
-});
-
-const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
+  fs.mkdirSync(uploadDir, { recursive: true }); // Создаём папку, если её нет
 }
 
 const storage = multer.diskStorage({
@@ -93,23 +87,14 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, Date.now() + path.extname(file.originalname)); // Уникальное имя файла
   },
 });
+
 const upload = multer({ storage });
 
-// Функция для загрузки файла на S3
-const uploadFileToS3 = (file) => {
-  const fileContent = fs.readFileSync(file.path);
-  const params = {
-    Bucket: process.env.S3_BUCKET,
-    Key: `uploads/${file.filename}`, // Уникальное имя файла в S3
-    Body: fileContent,
-    ACL: 'public-read', // Доступ к файлу (можно настроить по-другому)
-  };
-
-  return s3.upload(params).promise();
-};
+// Статическая папка для доступа к изображениям (опционально, если используете веб-сервер)
+app.use('/images', express.static(path.join(__dirname, '../images_store')));
 
 // Маршрут для добавления/обновления продуктов
 app.post('/api/products', upload.single('image'), async (req, res) => {
@@ -117,11 +102,10 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
   let imageUrl = null;
 
   try {
-    // Если есть загруженный файл, отправляем его на S3
+    // Если есть загруженный файл, формируем локальный URL
     if (req.file) {
-      const s3Response = await uploadFileToS3(req.file);
-      imageUrl = s3Response.Location; // URL файла на S3
-      fs.unlinkSync(req.file.path); // Удаляем локальный файл после загрузки
+      imageUrl = `/images/${req.file.filename}`; // Относительный путь для доступа через браузер
+      // Полный путь на сервере: ../images_store/имя_файла
     }
 
     if (id) {
@@ -173,11 +157,10 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Ошибка при загрузке на S3:', error);
+    console.error('Ошибка при обработке файла:', error);
     res.status(500).json({ error: 'Ошибка сервера при обработке изображения' });
   }
 });
-
   app.get('/api/products', (req, res) => {
     const sql = `
         SELECT 
