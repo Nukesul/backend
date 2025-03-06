@@ -12,7 +12,7 @@ const crypto = require("crypto");
 const cors = require("cors");
 require("dotenv").config();
 const nodemailer = require("nodemailer");
-
+const SFTPClient = require('ssh2-sftp-client');
 const app = express();
 
 // Используйте переменные окружения для Telegram
