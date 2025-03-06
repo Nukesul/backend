@@ -1,17 +1,17 @@
-const express = require('express');
-const mysql = require('mysql');
-const multer = require('multer');
-const path = require('path');
-const axios = require('axios');
-const bcrypt = require('bcryptjs');
-const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
-const fs = require('fs');
+const express = require("express");
+const mysql = require("mysql");
+const multer = require("multer");
+const path = require("path");
+const axios = require("axios");
+const bcrypt = require("bcryptjs");
+const bodyParser = require("body-parser");
+const jwt = require("jsonwebtoken");
+const fs = require("fs");
 const router = express.Router();
-const crypto = require('crypto');
-const cors = require('cors');
-require('dotenv').config();
-const nodemailer = require('nodemailer');
+const crypto = require("crypto");
+const cors = require("cors");
+require("dotenv").config();
+const nodemailer = require("nodemailer");
 
 const app = express();
 
@@ -19,76 +19,92 @@ const app = express();
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-
-app.use(cors({
-  origin: 'https://boodaikg.com',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: "https://boodaikg.com",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
 
 app.use(bodyParser.json());
-const secretKey = 'ваш_секретный_ключ';
+const secretKey = "ваш_секретный_ключ";
 
 // Настройка базы данных
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
+  database: process.env.DB_NAME,
 });
 
-app.get('/', (req, res) => {
-  res.send('Сервер работает!');
+app.get("/", (req, res) => {
+  res.send("Сервер работает!");
 });
 
 // Проверка соединения с базой данных
 db.connect(async (err) => {
   if (err) {
-    console.error('Ошибка подключения к базе данных:', err.message);
+    console.error("Ошибка подключения к базе данных:", err.message);
     return;
   }
-  console.log('Подключено к базе данных MySQL');
+  console.log("Подключено к базе данных MySQL");
 
   // Проверка на наличие администратора
   const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
   db.query(checkAdminQuery, async (error, results) => {
     if (error) {
-      console.error('Ошибка проверки администратора:', error);
+      console.error("Ошибка проверки администратора:", error);
       return;
     }
 
     if (results.length === 0) {
       // Если нет администратора, создаём нового
-      const generatedUsername = 'admin';
-      const generatedPassword = crypto.randomBytes(8).toString('hex');
+      const generatedUsername = "admin";
+      const generatedPassword = crypto.randomBytes(8).toString("hex");
       const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
       // Генерация токена
-      const generatedToken = crypto.randomBytes(32).toString('hex');
+      const generatedToken = crypto.randomBytes(32).toString("hex");
 
-      const insertAdminQuery = 'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
-      db.query(insertAdminQuery, [generatedUsername, 'admin@example.com', hashedPassword, generatedToken, '1234567890', 'DefaultCountry', 'male'], (error) => {
-        if (error) {
-          console.error('Ошибка при создании администратора:', error);
-          return;
+      const insertAdminQuery =
+        'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
+      db.query(
+        insertAdminQuery,
+        [
+          generatedUsername,
+          "admin@example.com",
+          hashedPassword,
+          generatedToken,
+          "1234567890",
+          "DefaultCountry",
+          "male",
+        ],
+        (error) => {
+          if (error) {
+            console.error("Ошибка при создании администратора:", error);
+            return;
+          }
+          console.log(
+            `Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`
+          );
         }
-        console.log(`Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`);
-      });
+      );
     } else {
-      console.log('Администратор уже существует');
+      console.log("Администратор уже существует");
     }
   });
 });
 
 // Настройка папки для загрузки изображений
-const uploadDir = '../images_store'; // Путь на одном уровне с public_html
+const uploadDir = "../images_store"; // Путь на одном уровне с public_html
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true }); // Создаём папку, если её нет
 }
 
 // Настройка статической раздачи для загруженных изображений
-app.use('/images', express.static(path.join(__dirname, '../images_store')));
+app.use("/images", express.static(path.join(__dirname, "../images_store")));
 
 // Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
@@ -102,84 +118,128 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Маршрут для добавления/обновления продуктов
-app.post('/api/products', upload.single('image'), (req, res) => {
-  const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
+app.post("/api/products", upload.single("image"), (req, res) => {
+  const {
+    id,
+    name,
+    description,
+    category,
+    subCategory,
+    price,
+    priceSmall,
+    priceMedium,
+    priceLarge,
+  } = req.body;
   const imageUrl = req.file ? `/images/${req.file.filename}` : null;
 
-  console.log('Полученные данные:', req.body);
-  console.log('Загруженный файл:', req.file);
+  console.log("Полученные данные:", req.body);
+  console.log("Загруженный файл:", req.file);
 
   // Если id предоставлен, обновляем существующий продукт
   if (id) {
-    const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
+    const getProductQuery = "SELECT image_url FROM products WHERE id = ?";
     db.query(getProductQuery, [id], (err, results) => {
       if (err) {
-        console.error('Ошибка при получении продукта:', err);
-        return res.status(500).json({ error: 'Ошибка при получении продукта' });
+        console.error("Ошибка при получении продукта:", err);
+        return res.status(500).json({ error: "Ошибка при получении продукта" });
       }
 
       if (results.length === 0) {
-        return res.status(404).json({ error: 'Продукт не найден' });
+        return res.status(404).json({ error: "Продукт не найден" });
       }
 
       const existingImageUrl = results[0].image_url;
       const updatedImageUrl = imageUrl || existingImageUrl; // Если новое изображение не загружено, оставляем старое
-      console.log('Текущий imageUrl:', existingImageUrl);
-      console.log('Обновлённый imageUrl:', updatedImageUrl);
+      console.log("Текущий imageUrl:", existingImageUrl);
+      console.log("Обновлённый imageUrl:", updatedImageUrl);
 
       const updateProductQuery = `
         UPDATE products 
         SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
         WHERE id = ?
       `;
-      db.query(updateProductQuery, [name, description, category, subCategory, updatedImageUrl, id], (err) => {
-        if (err) {
-          console.error('Ошибка при обновлении продукта:', err);
-          return res.status(500).json({ error: 'Ошибка при обновлении продукта' });
+      db.query(
+        updateProductQuery,
+        [name, description, category, subCategory, updatedImageUrl, id],
+        (err) => {
+          if (err) {
+            console.error("Ошибка при обновлении продукта:", err);
+            return res
+              .status(500)
+              .json({ error: "Ошибка при обновлении продукта" });
+          }
+          res
+            .status(200)
+            .json({
+              message: "Продукт успешно обновлен!",
+              imageUrl: updatedImageUrl,
+            });
         }
-        res.status(200).json({ message: 'Продукт успешно обновлен!', imageUrl: updatedImageUrl });
-      });
+      );
     });
   } else {
     // Если id нет, добавляем новый продукт
     if (!imageUrl) {
-      console.error('Изображение не загружено для нового продукта');
-      return res.status(400).json({ error: 'Изображение обязательно для нового продукта' });
+      console.error("Изображение не загружено для нового продукта");
+      return res
+        .status(400)
+        .json({ error: "Изображение обязательно для нового продукта" });
     }
 
-    const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
+    const productSql =
+      "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
     const productValues = [name, description, category, subCategory, imageUrl];
 
     db.beginTransaction((err) => {
       if (err) {
-        console.error('Ошибка начала транзакции:', err);
-        return res.status(500).json({ error: 'Ошибка транзакции' });
+        console.error("Ошибка начала транзакции:", err);
+        return res.status(500).json({ error: "Ошибка транзакции" });
       }
 
       db.query(productSql, productValues, (err, result) => {
         if (err) {
-          console.error('Ошибка при добавлении продукта:', err);
-          return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта' }));
+          console.error("Ошибка при добавлении продукта:", err);
+          return db.rollback(() =>
+            res.status(500).json({ error: "Ошибка при добавлении продукта" })
+          );
         }
 
         const productId = result.insertId;
-        console.log('ID нового продукта:', productId);
+        console.log("ID нового продукта:", productId);
 
-        const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-        const priceValues = [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null];
+        const priceSql =
+          "INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)";
+        const priceValues = [
+          productId,
+          priceSmall || null,
+          price || null,
+          priceMedium || null,
+          priceLarge || null,
+        ];
 
         db.query(priceSql, priceValues, (err) => {
           if (err) {
-            console.error('Ошибка при добавлении цен:', err);
-            return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен' }));
+            console.error("Ошибка при добавлении цен:", err);
+            return db.rollback(() =>
+              res.status(500).json({ error: "Ошибка при добавлении цен" })
+            );
           }
 
           db.commit((err) => {
             if (err) {
-              console.error('Ошибка подтверждения транзакции:', err);
-              return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
+              console.error("Ошибка подтверждения транзакции:", err);
+              return db.rollback(() =>
+                res
+                  .status(500)
+                  .json({ error: "Ошибка подтверждения транзакции" })
+              );
             }
-            res.status(201).json({ message: 'Продукт и цены успешно добавлены!', productId });
+            res
+              .status(201)
+              .json({
+                message: "Продукт и цены успешно добавлены!",
+                productId,
+              });
           });
         });
       });
@@ -187,9 +247,8 @@ app.post('/api/products', upload.single('image'), (req, res) => {
   }
 });
 
-
-  app.get('/api/products', (req, res) => {
-    const sql = `
+app.get("/api/products", (req, res) => {
+  const sql = `
         SELECT 
             products.id,
             products.name,
@@ -205,146 +264,177 @@ app.post('/api/products', upload.single('image'), (req, res) => {
         LEFT JOIN 
             prices ON products.id = prices.product_id
     `;
-    
-    db.query(sql, (err, results) => {
-        if (err) {
-            console.error('Ошибка при запросе данных:', err.message);  // Log the error
-            return res.status(500).json({ error: 'Ошибка при получении продуктов' });
-        }
 
-        console.log('Products retrieved:', results);  // Log results to confirm
-        res.json(results);
-    });
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при запросе данных:", err.message); // Log the error
+      return res.status(500).json({ error: "Ошибка при получении продуктов" });
+    }
+
+    console.log("Products retrieved:", results); // Log results to confirm
+    res.json(results);
+  });
 });
 
 // Маршрут для входа администратора
-app.post('/api/admin-login', async (req, res) => {
-    const { username, password } = req.body;
+app.post("/api/admin-login", async (req, res) => {
+  const { username, password } = req.body;
 
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Необходимо указать имя пользователя и пароль.' });
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ message: "Необходимо указать имя пользователя и пароль." });
+  }
+
+  const sql = "SELECT * FROM users WHERE username = ?";
+  db.query(sql, [username], async (err, results) => {
+    if (err) {
+      console.error("Ошибка базы данных:", err);
+      return res.status(500).json({ message: "Ошибка базы данных." });
     }
 
-    const sql = 'SELECT * FROM users WHERE username = ?';
-    db.query(sql, [username], async (err, results) => {
+    if (results.length === 0) {
+      const newAdminPassword = Math.random().toString(36).slice(-8); // Генерация пароля
+      const hashedPassword = await bcrypt.hash(newAdminPassword, 10);
+
+      const insertSql = "INSERT INTO users (username, password) VALUES (?, ?)";
+      db.query(insertSql, [username, hashedPassword], (err, result) => {
         if (err) {
-            console.error('Ошибка базы данных:', err);
-            return res.status(500).json({ message: 'Ошибка базы данных.' });
+          console.error("Ошибка создания администратора:", err);
+          return res
+            .status(500)
+            .json({ message: "Ошибка создания администратора." });
         }
 
-        if (results.length === 0) {
-            const newAdminPassword = Math.random().toString(36).slice(-8); // Генерация пароля
-            const hashedPassword = await bcrypt.hash(newAdminPassword, 10);
+        const token = jwt.sign(
+          { userId: result.insertId, username },
+          process.env.JWT_SECRET,
+          {
+            expiresIn: "1h",
+          }
+        );
 
-            const insertSql = 'INSERT INTO users (username, password) VALUES (?, ?)';
-            db.query(insertSql, [username, hashedPassword], (err, result) => {
-                if (err) {
-                    console.error('Ошибка создания администратора:', err);
-                    return res.status(500).json({ message: 'Ошибка создания администратора.' });
-                }
+        res.status(201).json({
+          message: "Новый администратор создан.",
+          token,
+          userId: result.insertId,
+          username,
+          generatedPassword: newAdminPassword,
+        });
+      });
+    } else {
+      const admin = results[0];
+      const validPassword = await bcrypt.compare(password, admin.password);
 
-                const token = jwt.sign({ userId: result.insertId, username }, process.env.JWT_SECRET, {
-                    expiresIn: '1h',
-                });
+      if (!validPassword) {
+        return res.status(401).json({ message: "Неверный пароль." });
+      }
 
-                res.status(201).json({
-                    message: 'Новый администратор создан.',
-                    token,
-                    userId: result.insertId,
-                    username,
-                    generatedPassword: newAdminPassword,
-                });
-            });
-        } else {
-            const admin = results[0];
-            const validPassword = await bcrypt.compare(password, admin.password);
-
-            if (!validPassword) {
-                return res.status(401).json({ message: 'Неверный пароль.' });
-            }
-
-            const token = jwt.sign({ userId: admin.id, username }, process.env.JWT_SECRET, {
-                expiresIn: '1h',
-            });
-
-            res.json({
-                message: 'Вход выполнен успешно.',
-                token,
-                userId: admin.id,
-                username,
-            });
+      const token = jwt.sign(
+        { userId: admin.id, username },
+        process.env.JWT_SECRET,
+        {
+          expiresIn: "1h",
         }
-    });
+      );
+
+      res.json({
+        message: "Вход выполнен успешно.",
+        token,
+        userId: admin.id,
+        username,
+      });
+    }
+  });
 });
 
 // Маршрут для удаления продукта
-app.delete('/api/products/:id', (req, res) => {
-    const productId = req.params.id;
-    const sql = 'DELETE FROM products WHERE id = ?';
-    db.query(sql, [productId], (err, result) => {
-        if (err) {
-            console.error('Ошибка базы данных:', err);
-            return res.status(500).json({ error: 'Ошибка базы данных' });
-        }
-        res.json({ message: 'Продукт успешно удален' });
-    });
+app.delete("/api/products/:id", (req, res) => {
+  const productId = req.params.id;
+  const sql = "DELETE FROM products WHERE id = ?";
+  db.query(sql, [productId], (err, result) => {
+    if (err) {
+      console.error("Ошибка базы данных:", err);
+      return res.status(500).json({ error: "Ошибка базы данных" });
+    }
+    res.json({ message: "Продукт успешно удален" });
+  });
 });
 
 // Определение маршрута /api/send-order
 // Настройка маршрута для POST
-app.post('/api/send-order', async (req, res) => {
-    try {
-        const { orderDetails, deliveryDetails, cartItems, discount, promoCode } = req.body;
+app.post("/api/send-order", async (req, res) => {
+  try {
+    const { orderDetails, deliveryDetails, cartItems, discount, promoCode } =
+      req.body;
 
-        // Расчет общей стоимости
-        const total = cartItems.reduce((sum, item) => sum + item.originalPrice * item.quantity, 0);
-        const discountedTotal = total * (1 - discount / 100);
+    // Расчет общей стоимости
+    const total = cartItems.reduce(
+      (sum, item) => sum + item.originalPrice * item.quantity,
+      0
+    );
+    const discountedTotal = total * (1 - discount / 100);
 
-        // Округление итоговых сумм
-        const roundedTotal = total.toFixed(2);
-        const roundedDiscountedTotal = discountedTotal.toFixed(2);
+    // Округление итоговых сумм
+    const roundedTotal = total.toFixed(2);
+    const roundedDiscountedTotal = discountedTotal.toFixed(2);
 
-        // Формирование текста заказа
-        const orderText = `
+    // Формирование текста заказа
+    const orderText = `
 📦 *Новый заказ:*
-👤 *Имя*: ${orderDetails.name || 'Нет'}
-📞 *Телефон*: ${orderDetails.phone || 'Нет'}
-📝 *Комментарии*: ${orderDetails.comments || 'Нет'}
+👤 *Имя*: ${orderDetails.name || "Нет"}
+📞 *Телефон*: ${orderDetails.phone || "Нет"}
+📝 *Комментарии*: ${orderDetails.comments || "Нет"}
 
 🚚 *Доставка:*
-👤 *Имя*: ${deliveryDetails.name || 'Нет'}
-📞 *Телефон*: ${deliveryDetails.phone || 'Нет'}
-📍 *Адрес*: ${deliveryDetails.address || 'Нет'}
-📝 *Комментарии*: ${deliveryDetails.comments || 'Нет'}
+👤 *Имя*: ${deliveryDetails.name || "Нет"}
+📞 *Телефон*: ${deliveryDetails.phone || "Нет"}
+📍 *Адрес*: ${deliveryDetails.address || "Нет"}
+📝 *Комментарии*: ${deliveryDetails.comments || "Нет"}
 
 🛒 *Товары:*
-${cartItems.map(item => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join('\n')}
+${cartItems
+  .map(
+    (item) =>
+      `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`
+  )
+  .join("\n")}
 
 💰 *Итоговая стоимость товаров*: ${roundedTotal} сом
-${promoCode ? `💸 *Скидка по промокоду (${discount}%):* ${roundedDiscountedTotal} сом` : '💸 Скидка не применена'}
+${
+  promoCode
+    ? `💸 *Скидка по промокоду (${discount}%):* ${roundedDiscountedTotal} сом`
+    : "💸 Скидка не применена"
+}
 💰 *Итоговая сумма*: ${roundedDiscountedTotal} сом
         `;
 
-        // Отправка сообщения в Telegram
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: orderText,
-            parse_mode: "Markdown",
-        });
+    // Отправка сообщения в Telegram
+    await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: orderText,
+        parse_mode: "Markdown",
+      }
+    );
 
-        res.status(200).json({ message: 'Заказ отправлен в Telegram' });
-    } catch (error) {
-        console.error("Ошибка при отправке заказа:", error.response ? error.response.data : error.message);
-        res.status(500).json({
-            message: 'Ошибка отправки заказа',
-            error: error.response ? error.response.data : error.message,
-        });
-    }
+    res.status(200).json({ message: "Заказ отправлен в Telegram" });
+  } catch (error) {
+    console.error(
+      "Ошибка при отправке заказа:",
+      error.response ? error.response.data : error.message
+    );
+    res.status(500).json({
+      message: "Ошибка отправки заказа",
+      error: error.response ? error.response.data : error.message,
+    });
+  }
 });
 
 // Эндпоинт /api/data
-app.get('/api/data', (req, res) => {
-    const sql = `
+app.get("/api/data", (req, res) => {
+  const sql = `
         SELECT 
             products.id,
             products.name,
@@ -361,60 +451,91 @@ app.get('/api/data', (req, res) => {
             prices ON products.id = prices.product_id
     `;
 
-    db.query(sql, (err, results) => {
-        if (err) {
-            console.error('Ошибка при запросе данных:', err.message); // Лог ошибки
-            return res.status(500).json({ error: 'Ошибка при получении данных' });
-        }
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при запросе данных:", err.message); // Лог ошибки
+      return res.status(500).json({ error: "Ошибка при получении данных" });
+    }
 
-        res.json(results); // Возвращаем данные из базы
-    });
+    res.json(results); // Возвращаем данные из базы
+  });
 });
 
-
 // Обновление продукта
-app.put('/api/products/:id', upload.single('image'), (req, res) => {
-    const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-    const productId = req.params.id;
-  
-    const productSql = `
+app.put("/api/products/:id", upload.single("image"), (req, res) => {
+  const {
+    name,
+    description,
+    category,
+    subCategory,
+    price,
+    priceSmall,
+    priceMedium,
+    priceLarge,
+  } = req.body;
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const productId = req.params.id;
+
+  const productSql = `
       UPDATE products 
       SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url) 
       WHERE id = ?
     `;
-    const productValues = [name, description, category, subCategory, imageUrl, productId];
-  
-    db.beginTransaction((err) => {
-      if (err) return res.status(500).json({ error: 'Ошибка транзакции' });
-  
-      db.query(productSql, productValues, (err, result) => {
-        if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при обновлении продукта' }));
-  
-        const priceSql = `
+  const productValues = [
+    name,
+    description,
+    category,
+    subCategory,
+    imageUrl,
+    productId,
+  ];
+
+  db.beginTransaction((err) => {
+    if (err) return res.status(500).json({ error: "Ошибка транзакции" });
+
+    db.query(productSql, productValues, (err, result) => {
+      if (err)
+        return db.rollback(() =>
+          res.status(500).json({ error: "Ошибка при обновлении продукта" })
+        );
+
+      const priceSql = `
           UPDATE prices 
           SET price_small = ?, price_medium = ?, price_large = ?, price = ?
           WHERE product_id = ?
         `;
-        const priceValues = [priceSmall, priceMedium, priceLarge, price, productId];
-  
-        db.query(priceSql, priceValues, (err) => {
-          if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка при обновлении цен' }));
-  
-          db.commit((err) => {
-            if (err) return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции' }));
-            res.status(200).json({ message: 'Продукт и цены успешно обновлены!' });
-          });
+      const priceValues = [
+        priceSmall,
+        priceMedium,
+        priceLarge,
+        price,
+        productId,
+      ];
+
+      db.query(priceSql, priceValues, (err) => {
+        if (err)
+          return db.rollback(() =>
+            res.status(500).json({ error: "Ошибка при обновлении цен" })
+          );
+
+        db.commit((err) => {
+          if (err)
+            return db.rollback(() =>
+              res.status(500).json({ error: "Ошибка подтверждения транзакции" })
+            );
+          res
+            .status(200)
+            .json({ message: "Продукт и цены успешно обновлены!" });
         });
       });
     });
   });
-  
+});
 
-  app.get('/api/products/:id', (req, res) => {
-    const productId = req.params.id;
-  
-    const sql = `
+app.get("/api/products/:id", (req, res) => {
+  const productId = req.params.id;
+
+  const sql = `
       SELECT 
         products.id,
         products.name,
@@ -433,73 +554,76 @@ app.put('/api/products/:id', upload.single('image'), (req, res) => {
       WHERE 
         products.id = ?
     `;
-  
-    db.query(sql, [productId], (err, results) => {
-      if (err) {
-        console.error('Ошибка при запросе продукта:', err.message);
-        return res.status(500).json({ error: 'Ошибка при получении продукта' });
-      }
-  
-      if (results.length === 0) {
-        return res.status(404).json({ error: 'Продукт не найден' });
-      }
-  
-      res.json(results[0]);
-    });
-  });
-  
 
-// Регистрация пользователя
-app.post('/api/register', async (req, res) => {
-    const { firstName, lastName, phone, email, password } = req.body;
-
-    if (!firstName || !lastName || !phone || !email || !password) {
-        return res.status(400).json({ message: 'Заполните все поля' });
+  db.query(sql, [productId], (err, results) => {
+    if (err) {
+      console.error("Ошибка при запросе продукта:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении продукта" });
     }
 
-    try {
-        // Проверка существующего пользователя
-        const [existingUser] = await new Promise((resolve, reject) => {
-            db.query(
-                'SELECT * FROM userskg WHERE email = ? OR phone = ?',
-                [email, phone],
-                (err, results) => (err ? reject(err) : resolve(results))
-            );
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Продукт не найден" });
+    }
+
+    res.json(results[0]);
+  });
+});
+
+// Регистрация пользователя
+app.post("/api/register", async (req, res) => {
+  const { firstName, lastName, phone, email, password } = req.body;
+
+  if (!firstName || !lastName || !phone || !email || !password) {
+    return res.status(400).json({ message: "Заполните все поля" });
+  }
+
+  try {
+    // Проверка существующего пользователя
+    const [existingUser] = await new Promise((resolve, reject) => {
+      db.query(
+        "SELECT * FROM userskg WHERE email = ? OR phone = ?",
+        [email, phone],
+        (err, results) => (err ? reject(err) : resolve(results))
+      );
+    });
+
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({
+          message: "Пользователь с таким email или телефоном уже существует",
         });
+    }
 
-        if (existingUser) {
-            return res.status(400).json({ message: 'Пользователь с таким email или телефоном уже существует' });
-        }
+    // Генерация кода подтверждения
+    const confirmationCode = Math.floor(100000 + Math.random() * 900000);
 
-        // Генерация кода подтверждения
-        const confirmationCode = Math.floor(100000 + Math.random() * 900000);
+    // Хэширование пароля
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Хэширование пароля
-        const hashedPassword = await bcrypt.hash(password, 10);
+    // Сохранение временных данных
+    await new Promise((resolve, reject) => {
+      db.query(
+        "INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)",
+        [firstName, lastName, phone, email, hashedPassword, confirmationCode],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
 
-        // Сохранение временных данных
-        await new Promise((resolve, reject) => {
-            db.query(
-                'INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)',
-                [firstName, lastName, phone, email, hashedPassword, confirmationCode],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
+    // Отправка кода подтверждения на email
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
 
-        // Отправка кода подтверждения на email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
-            },
-        });
-
-        await transporter.sendMail({
-            from: `"Boodai Pizza" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Подтверждение регистрации',
-            html: `
+    await transporter.sendMail({
+      from: `"Boodai Pizza" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Подтверждение регистрации",
+      html: `
                 <!DOCTYPE html>
                 <html lang="ru">
                 <head>
@@ -574,94 +698,98 @@ app.post('/api/register', async (req, res) => {
         
                 </body>
                 </html>
-            `
-        });
-        
-        res.status(201).json({ message: 'Код подтверждения отправлен на почту.' });
-    } catch (error) {
-        console.error('Ошибка при регистрации пользователя:', error);
-        res.status(500).json({ message: 'Ошибка сервера' });
-    }
+            `,
+    });
+
+    res.status(201).json({ message: "Код подтверждения отправлен на почту." });
+  } catch (error) {
+    console.error("Ошибка при регистрации пользователя:", error);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
 // Подтверждение кода
-app.post('/api/confirm-code', async (req, res) => {
-    const { code } = req.body;
+app.post("/api/confirm-code", async (req, res) => {
+  const { code } = req.body;
 
-    try {
-        // Проверка кода в temp_users
-        const [tempUser] = await new Promise((resolve, reject) => {
-            db.query(
-                'SELECT * FROM temp_users WHERE confirmation_code = ?',
-                [code],
-                (err, results) => (err ? reject(err) : resolve(results))
-            );
-        });
+  try {
+    // Проверка кода в temp_users
+    const [tempUser] = await new Promise((resolve, reject) => {
+      db.query(
+        "SELECT * FROM temp_users WHERE confirmation_code = ?",
+        [code],
+        (err, results) => (err ? reject(err) : resolve(results))
+      );
+    });
 
-        if (!tempUser) {
-            return res.status(400).json({ message: 'Неверный код подтверждения' });
-        }
-
-        // Перенос пользователя в основную таблицу
-        const userId = await new Promise((resolve, reject) => {
-            db.query(
-                'INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)',
-                [
-                    tempUser.first_name,
-                    tempUser.last_name,
-                    tempUser.phone,
-                    tempUser.email,
-                    tempUser.password_hash,
-                ],
-                (err, results) => (err ? reject(err) : resolve(results.insertId))
-            );
-        });
-
-        // Удаление временных данных
-        await new Promise((resolve, reject) => {
-            db.query(
-                'DELETE FROM temp_users WHERE confirmation_code = ?',
-                [code],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
-
-        // Создание JWT токена
-        const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
-
-        // Сохранение токена в базу данных (если нужно)
-        await new Promise((resolve, reject) => {
-            db.query(
-                'UPDATE userskg SET token = ? WHERE user_id = ?',
-                [token, userId],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
-
-        res.status(200).json({ message: 'Подтверждение успешно!', token });
-    } catch (error) {
-        console.error('Ошибка при подтверждении кода:', error);
-        res.status(500).json({ message: 'Ошибка сервера' });
+    if (!tempUser) {
+      return res.status(400).json({ message: "Неверный код подтверждения" });
     }
+
+    // Перенос пользователя в основную таблицу
+    const userId = await new Promise((resolve, reject) => {
+      db.query(
+        "INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
+        [
+          tempUser.first_name,
+          tempUser.last_name,
+          tempUser.phone,
+          tempUser.email,
+          tempUser.password_hash,
+        ],
+        (err, results) => (err ? reject(err) : resolve(results.insertId))
+      );
+    });
+
+    // Удаление временных данных
+    await new Promise((resolve, reject) => {
+      db.query(
+        "DELETE FROM temp_users WHERE confirmation_code = ?",
+        [code],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+
+    // Создание JWT токена
+    const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, {
+      expiresIn: "24h",
+    });
+
+    // Сохранение токена в базу данных (если нужно)
+    await new Promise((resolve, reject) => {
+      db.query(
+        "UPDATE userskg SET token = ? WHERE user_id = ?",
+        [token, userId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+
+    res.status(200).json({ message: "Подтверждение успешно!", token });
+  } catch (error) {
+    console.error("Ошибка при подтверждении кода:", error);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
 // API для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
 // Защищенный маршрут для получения информации о пользователе
-app.get('/api/user', (req, res) => {
-    // Извлечение токена из заголовка Authorization
-    const token = req.headers['authorization']?.split(' ')[1];
+app.get("/api/user", (req, res) => {
+  // Извлечение токена из заголовка Authorization
+  const token = req.headers["authorization"]?.split(" ")[1];
 
-    if (!token) {
-        return res.status(401).json({ message: 'Необходим токен для доступа к этому ресурсу' });
+  if (!token) {
+    return res
+      .status(401)
+      .json({ message: "Необходим токен для доступа к этому ресурсу" });
+  }
+
+  // Проверка токена
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Неверный токен" });
     }
 
-    // Проверка токена
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) {
-            return res.status(403).json({ message: 'Неверный токен' });
-        }
-
-        // SQL-запрос для получения данных пользователя
-        const sql = `
+    // SQL-запрос для получения данных пользователя
+    const sql = `
         SELECT 
             user_id, 
             first_name AS username, 
@@ -670,191 +798,216 @@ app.get('/api/user', (req, res) => {
             balance 
         FROM userskg 
         WHERE user_id = ?`;
-    
-        db.query(sql, [decoded.user_id], (error, results) => {
-            if (error) {
-                console.error('Ошибка запроса к базе данных:', error);
-                return res.status(500).json({ message: 'Ошибка сервера' });
-            }
 
-            if (results.length === 0) {
-                return res.status(404).json({ message: 'Пользователь не найден' });
-            }
+    db.query(sql, [decoded.user_id], (error, results) => {
+      if (error) {
+        console.error("Ошибка запроса к базе данных:", error);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
 
-            // Возврат данных пользователя
-            const user = results[0];
-            res.json({
-                user_id: user.user_id,
-                username: user.username,
-                email: user.email,
-                phone: user.phone,
-                balance: user.balance,
-            });
-        });
+      if (results.length === 0) {
+        return res.status(404).json({ message: "Пользователь не найден" });
+      }
+
+      // Возврат данных пользователя
+      const user = results[0];
+      res.json({
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        balance: user.balance,
+      });
     });
+  });
 });
-app.post('/api/login', (req, res) => {
-    const { email, password } = req.body;
+app.post("/api/login", (req, res) => {
+  const { email, password } = req.body;
 
-    // Проверка на наличие обязательных полей
-    if (!email || !password) {
-        return res.status(400).json({ message: 'Пожалуйста, введите email и пароль!' });
+  // Проверка на наличие обязательных полей
+  if (!email || !password) {
+    return res
+      .status(400)
+      .json({ message: "Пожалуйста, введите email и пароль!" });
+  }
+
+  const sql = "SELECT * FROM userskg WHERE email = ?";
+  db.query(sql, [email], async (error, results) => {
+    if (error) {
+      console.error("Ошибка базы данных:", error);
+      return res.status(500).json({ message: "Ошибка сервера" });
     }
 
-    const sql = 'SELECT * FROM userskg WHERE email = ?';
-    db.query(sql, [email], async (error, results) => {
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Пользователь не найден!" });
+    }
+
+    const user = results[0];
+
+    // Проверка наличия хэшированного пароля
+    if (!user.password_hash) {
+      console.error(
+        "Пароль отсутствует в базе данных для пользователя с email:",
+        email
+      );
+      return res
+        .status(500)
+        .json({ message: "Ошибка сервера: пароль не найден." });
+    }
+
+    try {
+      // Сравнение паролей
+      const isPasswordMatch = await bcrypt.compare(
+        password,
+        user.password_hash
+      );
+
+      if (!isPasswordMatch) {
+        return res.status(400).json({ message: "Неверный пароль!" });
+      }
+
+      // Если токен уже существует в базе данных, возвращаем его
+      if (user.token) {
+        return res.json({
+          message: "Вход успешен",
+          token: user.token,
+          userId: user.user_id,
+        });
+      }
+
+      // Если токена нет, создаем новый, сохраняем и возвращаем
+      const token = jwt.sign(
+        { user_id: user.user_id },
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+
+      const updateTokenQuery = "UPDATE userskg SET token = ? WHERE user_id = ?";
+      db.query(updateTokenQuery, [token, user.user_id], (error) => {
         if (error) {
-            console.error('Ошибка базы данных:', error);
-            return res.status(500).json({ message: 'Ошибка сервера' });
+          console.error("Ошибка при обновлении токена:", error);
+          return res
+            .status(500)
+            .json({ message: "Ошибка при сохранении токена" });
         }
 
-        if (results.length === 0) {
-            return res.status(404).json({ message: 'Пользователь не найден!' });
-        }
-
-        const user = results[0];
-
-        // Проверка наличия хэшированного пароля
-        if (!user.password_hash) {
-            console.error('Пароль отсутствует в базе данных для пользователя с email:', email);
-            return res.status(500).json({ message: 'Ошибка сервера: пароль не найден.' });
-        }
-
-        try {
-            // Сравнение паролей
-            const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
-
-            if (!isPasswordMatch) {
-                return res.status(400).json({ message: 'Неверный пароль!' });
-            }
-
-            // Если токен уже существует в базе данных, возвращаем его
-            if (user.token) {
-                return res.json({ message: 'Вход успешен', token: user.token, userId: user.user_id });
-            }
-
-            // Если токена нет, создаем новый, сохраняем и возвращаем
-            const token = jwt.sign({ user_id: user.user_id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-            const updateTokenQuery = 'UPDATE userskg SET token = ? WHERE user_id = ?';
-            db.query(updateTokenQuery, [token, user.user_id], (error) => {
-                if (error) {
-                    console.error('Ошибка при обновлении токена:', error);
-                    return res.status(500).json({ message: 'Ошибка при сохранении токена' });
-                }
-            
-                res.json({ message: 'Вход успешен', token });
-            });
-            
-        } catch (err) {
-            console.error('Ошибка при сравнении пароля:', err);
-            return res.status(500).json({ message: 'Ошибка сервера при проверке пароля.' });
-        }
-    });
+        res.json({ message: "Вход успешен", token });
+      });
+    } catch (err) {
+      console.error("Ошибка при сравнении пароля:", err);
+      return res
+        .status(500)
+        .json({ message: "Ошибка сервера при проверке пароля." });
+    }
+  });
 });
 
 // Маршрут для получения всех пользователей
-app.get('/api/users', (req, res) => {
-    const query = 'SELECT * FROM userskg';
+app.get("/api/users", (req, res) => {
+  const query = "SELECT * FROM userskg";
 
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error('Ошибка при выполнении запроса:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
-        }
-        res.json(results); // Отправка данных в ответе
-    });
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error("Ошибка при выполнении запроса:", err);
+      res.status(500).send("Ошибка сервера");
+      return;
+    }
+    res.json(results); // Отправка данных в ответе
+  });
 });
 
-app.delete('/api/users/:user_id', (req, res) => {
-    const userId = parseInt(req.params.user_id); // Корректный парсинг user_id
+app.delete("/api/users/:user_id", (req, res) => {
+  const userId = parseInt(req.params.user_id); // Корректный парсинг user_id
 
-    if (isNaN(userId)) {
-        return res.status(400).send('Неверный идентификатор пользователя');
+  if (isNaN(userId)) {
+    return res.status(400).send("Неверный идентификатор пользователя");
+  }
+
+  // Убедитесь, что скидка, если она передается, также проверяется
+  // Если это не связано с удалением, можно убрать проверку скидки
+  const discount = req.body.discount; // Пример, если скидка передается в теле запроса
+  if (discount && (discount < 1 || discount > 100)) {
+    return res.status(400).send("Процент скидки должен быть от 1 до 100");
+  }
+
+  // Запрос на удаление пользователя
+  const deleteUserQuery = "DELETE FROM userskg WHERE user_id = ?";
+  db.query(deleteUserQuery, [userId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении пользователя:", err);
+      return res
+        .status(500)
+        .send("Ошибка на сервере при удалении пользователя");
     }
 
-    // Убедитесь, что скидка, если она передается, также проверяется
-    // Если это не связано с удалением, можно убрать проверку скидки
-    const discount = req.body.discount; // Пример, если скидка передается в теле запроса
-    if (discount && (discount < 1 || discount > 100)) {
-        return res.status(400).send('Процент скидки должен быть от 1 до 100');
+    // Проверка, был ли пользователь удален
+    if (result.affectedRows === 0) {
+      return res.status(404).send("Пользователь не найден");
     }
 
-    // Запрос на удаление пользователя
-    const deleteUserQuery = 'DELETE FROM userskg WHERE user_id = ?';
-    db.query(deleteUserQuery, [userId], (err, result) => {
-        if (err) {
-            console.error('Ошибка при удалении пользователя:', err);
-            return res.status(500).send('Ошибка на сервере при удалении пользователя');
-        }
-
-        // Проверка, был ли пользователь удален
-        if (result.affectedRows === 0) {
-            return res.status(404).send('Пользователь не найден');
-        }
-
-        res.status(200).send('Пользователь успешно удален');
-    });
+    res.status(200).send("Пользователь успешно удален");
+  });
 });
-
 
 // Функция для генерации промокода
 function generatePromoCode() {
-    return 'PROMO-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+  return "PROMO-" + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
 
 // Маршрут для обновления и отправки промокода пользователю
 // Маршрут для получения или генерации промокода
 // API для отправки промокодов
-app.post('/api/users/:user_id/promo', (req, res) => {
-    const userId = parseInt(req.params.user_id, 10);
+app.post("/api/users/:user_id/promo", (req, res) => {
+  const userId = parseInt(req.params.user_id, 10);
 
-    if (isNaN(userId)) {
-        return res.status(400).send('Некорректный идентификатор пользователя');
-    }
+  if (isNaN(userId)) {
+    return res.status(400).send("Некорректный идентификатор пользователя");
+  }
 
-    const { discount } = req.body; // Получаем discount из тела запроса
-    if (!discount || discount < 1 || discount > 100) {
-        return res.status(400).send('Скидка должна быть в диапазоне от 1 до 100');
-    }
+  const { discount } = req.body; // Получаем discount из тела запроса
+  if (!discount || discount < 1 || discount > 100) {
+    return res.status(400).send("Скидка должна быть в диапазоне от 1 до 100");
+  }
 
-    db.query('SELECT email, promo_code, promo_code_created_at FROM userskg WHERE user_id = ?', [userId], (err, users) => {
-        if (err) {
-            console.error('Ошибка при получении пользователя:', err);
-            return res.status(500).send('Ошибка сервера');
-        }
+  db.query(
+    "SELECT email, promo_code, promo_code_created_at FROM userskg WHERE user_id = ?",
+    [userId],
+    (err, users) => {
+      if (err) {
+        console.error("Ошибка при получении пользователя:", err);
+        return res.status(500).send("Ошибка сервера");
+      }
 
-        const user = users[0];
-        if (!user) {
-            return res.status(404).send('Пользователь не найден');
-        }
+      const user = users[0];
+      if (!user) {
+        return res.status(404).send("Пользователь не найден");
+      }
 
-        const now = new Date();
-        const promoCode = generatePromoCode();
+      const now = new Date();
+      const promoCode = generatePromoCode();
 
-        db.query(
-            'UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?',
-            [promoCode, now, discount, userId],
-            (updateErr) => {
-                if (updateErr) {
-                    console.error('Ошибка при обновлении промокода:', updateErr);
-                    return res.status(500).send('Ошибка сервера');
-                }
+      db.query(
+        "UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?",
+        [promoCode, now, discount, userId],
+        (updateErr) => {
+          if (updateErr) {
+            console.error("Ошибка при обновлении промокода:", updateErr);
+            return res.status(500).send("Ошибка сервера");
+          }
 
-                const transporter = nodemailer.createTransport({
-                    service: 'gmail',
-                    auth: {
-                        user: 'vorlodgamess@gmail.com',
-                        pass: 'hpmjnrjmaedrylve',
-                    },
-                });
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: "vorlodgamess@gmail.com",
+              pass: "hpmjnrjmaedrylve",
+            },
+          });
 
-                const mailOptions = {
-                    from: 'vorlodgamess@gmail.com',
-                    to: user.email,
-                    subject: 'Ваш новый промокод от Boodya Pizza',
-                    html: `
+          const mailOptions = {
+            from: "vorlodgamess@gmail.com",
+            to: user.email,
+            subject: "Ваш новый промокод от Boodya Pizza",
+            html: `
                     <div style="background-color: #000; color: #fff; text-align: center; padding: 20px; font-family: Arial;">
                         <h1 style="color: #FFD700;">Boodya Pizza</h1>
                         <p>Ваш уникальный промокод:</p>
@@ -864,95 +1017,99 @@ app.post('/api/users/:user_id/promo', (req, res) => {
                         <p>Спасибо, что выбрали Boodya Pizza!</p>
                     </div>
                     `,
-                };
+          };
 
-                transporter.sendMail(mailOptions, (mailErr) => {
-                    if (mailErr) {
-                        console.error('Ошибка при отправке письма:', mailErr);
-                        return res.status(500).send('Ошибка при отправке письма');
-                    }
-
-                    res.send({ promoCode, discount });
-                });
+          transporter.sendMail(mailOptions, (mailErr) => {
+            if (mailErr) {
+              console.error("Ошибка при отправке письма:", mailErr);
+              return res.status(500).send("Ошибка при отправке письма");
             }
-        );
-    });
+
+            res.send({ promoCode, discount });
+          });
+        }
+      );
+    }
+  );
 });
 
 // API для проверки промокода
-app.post('/api/validate-promo', (req, res) => {
-    const { promoCode } = req.body;
+app.post("/api/validate-promo", (req, res) => {
+  const { promoCode } = req.body;
 
-    console.log("Получен промокод:", promoCode); // Логируем промокод
+  console.log("Получен промокод:", promoCode); // Логируем промокод
 
-    if (!promoCode) {
-        return res.status(400).json({ message: 'Промокод не может быть пустым.' });
+  if (!promoCode) {
+    return res.status(400).json({ message: "Промокод не может быть пустым." });
+  }
+
+  const query = "SELECT * FROM userskg WHERE promo_code = ?";
+  db.query(query, [promoCode], (err, results) => {
+    if (err) {
+      console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
+      return res.status(500).json({ message: "Ошибка сервера", error: err });
     }
 
-    const query = 'SELECT * FROM userskg WHERE promo_code = ?';
-    db.query(query, [promoCode], (err, results) => {
-        if (err) {
-            console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
-            return res.status(500).json({ message: 'Ошибка сервера', error: err });
-        }
-
-        if (results.length === 0) {
-            return res.status(400).json({ message: 'Неверный промокод.' });
-        }
-
-        const promoCodeDetails = results[0];
-        const currentDate = new Date();
-        const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
-
-        // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
-        const expiryDate = new Date(promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        if (currentDate > expiryDate) {
-            return res.status(400).json({ message: 'Промокод истек.' });
-        }
-
-        // Получаем значение скидки из базы данных
-        const discount = promoCodeDetails.discount;
-
-        if (!discount || discount <= 0) {
-            return res.status(400).json({ message: 'Скидка недействительна для данного промокода.' });
-        }
-
-        // Промокод действителен, возвращаем скидку
-        res.json({ discount: discount });
-    });
-});
-
-  // API для аутентификации пользователя через user_id
-app.post('/api/authenticate', (req, res) => {
-    const { user_id } = req.body;
-
-    // Проверка на наличие user_id в теле запроса
-    if (!user_id) {
-        return res.status(400).json({ error: "User ID is required" });
+    if (results.length === 0) {
+      return res.status(400).json({ message: "Неверный промокод." });
     }
 
-    // SQL запрос для поиска пользователя по user_id
-    const query = 'SELECT * FROM userskg WHERE user_id = ?';
-    db.query(query, [user_id], (err, results) => {
-        if (err) {
-            console.error('Ошибка при выполнении запроса:', err);
-            return res.status(500).json({ error: "Ошибка сервера" });
-        }
+    const promoCodeDetails = results[0];
+    const currentDate = new Date();
+    const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
 
-        if (results.length === 0) {
-            return res.status(404).json({ error: "Пользователь не найден" });
-        }
+    // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
+    const expiryDate = new Date(
+      promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000
+    );
 
-        // Возвращаем информацию о пользователе и промокод
-        res.json({ 
-            promoCode: results[0].promoCode || null, 
-            user: results[0] 
-        });
-    });
+    if (currentDate > expiryDate) {
+      return res.status(400).json({ message: "Промокод истек." });
+    }
+
+    // Получаем значение скидки из базы данных
+    const discount = promoCodeDetails.discount;
+
+    if (!discount || discount <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Скидка недействительна для данного промокода." });
+    }
+
+    // Промокод действителен, возвращаем скидку
+    res.json({ discount: discount });
+  });
 });
 
-  
+// API для аутентификации пользователя через user_id
+app.post("/api/authenticate", (req, res) => {
+  const { user_id } = req.body;
+
+  // Проверка на наличие user_id в теле запроса
+  if (!user_id) {
+    return res.status(400).json({ error: "User ID is required" });
+  }
+
+  // SQL запрос для поиска пользователя по user_id
+  const query = "SELECT * FROM userskg WHERE user_id = ?";
+  db.query(query, [user_id], (err, results) => {
+    if (err) {
+      console.error("Ошибка при выполнении запроса:", err);
+      return res.status(500).json({ error: "Ошибка сервера" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    // Возвращаем информацию о пользователе и промокод
+    res.json({
+      promoCode: results[0].promoCode || null,
+      user: results[0],
+    });
+  });
+});
+
 app.listen(5000, () => {
-    console.log('Сервер запущен на порту 5000');
+  console.log("Сервер запущен на порту 5000");
 });
