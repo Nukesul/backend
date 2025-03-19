@@ -7,18 +7,20 @@ const bcrypt = require("bcryptjs");
 const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
-const router = express.Router();
 const crypto = require("crypto");
 const cors = require("cors");
 require("dotenv").config();
 const nodemailer = require("nodemailer");
-const SFTPClient = require('ssh2-sftp-client');
+const SFTPClient = require("ssh2-sftp-client");
+
 const app = express();
 
-// Используйте переменные окружения для Telegram
+// Переменные окружения для Telegram и JWT
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const JWT_SECRET = process.env.JWT_SECRET || "your_default_secret_key";
 
+// CORS настройки
 app.use(
   cors({
     origin: "https://boodaikg.com",
@@ -28,7 +30,19 @@ app.use(
 );
 
 app.use(bodyParser.json());
-const secretKey = "ваш_секретный_ключ";
+
+// Настройка Multer для загрузки файлов
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) =>
+    cb(null, Date.now() + path.extname(file.originalname)),
+});
+const upload = multer({ storage });
+
+// Создание папки uploads, если она не существует
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
 
 // Настройка базы данных
 const db = mysql.createConnection({
@@ -38,33 +52,25 @@ const db = mysql.createConnection({
   database: process.env.DB_NAME,
 });
 
-app.get("/", (req, res) => {
-  res.send("Сервер работает!");
-});
-
-// Проверка соединения с базой данных
-db.connect(async (err) => {
+// Подключение к базе данных
+db.connect((err) => {
   if (err) {
     console.error("Ошибка подключения к базе данных:", err.message);
-    return;
+    process.exit(1); // Завершаем процесс, если база недоступна
   }
   console.log("Подключено к базе данных MySQL");
 
-  // Проверка на наличие администратора
+  // Проверка наличия администратора
   const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
   db.query(checkAdminQuery, async (error, results) => {
     if (error) {
       console.error("Ошибка проверки администратора:", error);
       return;
     }
-
     if (results.length === 0) {
-      // Если нет администратора, создаём нового
       const generatedUsername = "admin";
       const generatedPassword = crypto.randomBytes(8).toString("hex");
       const hashedPassword = await bcrypt.hash(generatedPassword, 10);
-
-      // Генерация токена
       const generatedToken = crypto.randomBytes(32).toString("hex");
 
       const insertAdminQuery =
@@ -83,11 +89,11 @@ db.connect(async (err) => {
         (error) => {
           if (error) {
             console.error("Ошибка при создании администратора:", error);
-            return;
+          } else {
+            console.log(
+              `Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`
+            );
           }
-          console.log(
-            `Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`
-          );
         }
       );
     } else {
@@ -95,253 +101,191 @@ db.connect(async (err) => {
     }
   });
 });
-// Маршрут для получения продуктов
-app.get('/api/products', (req, res) => {
-    const sql = `
-      SELECT 
-        products.id,
-        products.name,
-        products.description,
-        products.category,
-        products.image_url,
-        prices.price_small,
-        prices.price_medium,
-        prices.price_large,
-        prices.price
-      FROM 
-        products
-      LEFT JOIN 
-        prices ON products.id = prices.product_id
-    `;
-  
-    db.query(sql, (err, results) => {
-      if (err) {
-        console.error('Ошибка при запросе данных:', err.message);
-        return res.status(500).json({ error: 'Ошибка при получении продуктов' });
-      }
-      console.log('Products retrieved:', results);
-      res.json(results);
-    });
-  });
-  
-  // Маршрут для добавления/обновления продуктов
-  app.post('/api/products', (req, res) => {
-    const { id, name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge, imageUrl } = req.body;
-    console.log('Полученные данные:', req.body);
 
-    // Валидация обязательных полей
-    if (!name || !category) {
-        return res.status(400).json({ error: 'Поля name и category обязательны' });
-    }
-    if (!id && !imageUrl) {
-        return res.status(400).json({ error: 'Изображение (imageUrl) обязательно для нового продукта' });
-    }
-
-    if (id) {
-        // Обновление продукта
-        const getProductQuery = 'SELECT image_url FROM products WHERE id = ?';
-        db.query(getProductQuery, [id], (err, results) => {
-            if (err) {
-                console.error('Ошибка при получении продукта:', err);
-                return res.status(500).json({ error: 'Ошибка при получении продукта: ' + err.message });
-            }
-
-            if (results.length === 0) {
-                return res.status(404).json({ error: 'Продукт не найден' });
-            }
-
-            const existingImageUrl = results[0].image_url;
-            const updatedImageUrl = imageUrl || existingImageUrl;
-            console.log('Текущий imageUrl:', existingImageUrl);
-            console.log('Обновлённый imageUrl:', updatedImageUrl);
-
-            const updateProductQuery = `
-                UPDATE products 
-                SET name = ?, description = ?, category = ?, sub_category = ?, image_url = ? 
-                WHERE id = ?
-            `;
-            db.query(updateProductQuery, [name || null, description || null, category || null, subCategory || null, updatedImageUrl, id], (err) => {
-                if (err) {
-                    console.error('Ошибка при обновлении продукта:', err);
-                    return res.status(500).json({ error: 'Ошибка при обновлении продукта: ' + err.message });
-                }
-                res.status(200).json({ message: 'Продукт успешно обновлен!', imageUrl: updatedImageUrl });
-            });
-        });
-    } else {
-        // Добавление нового продукта
-        const productSql = 'INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)';
-        const productValues = [name, description || null, category, subCategory || null, imageUrl];
-
-        db.beginTransaction((err) => {
-            if (err) {
-                console.error('Ошибка начала транзакции:', err);
-                return res.status(500).json({ error: 'Ошибка транзакции: ' + err.message });
-            }
-
-            db.query(productSql, productValues, (err, result) => {
-                if (err) {
-                    console.error('Ошибка при добавлении продукта:', err);
-                    return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении продукта: ' + err.message }));
-                }
-
-                const productId = result.insertId;
-                console.log('ID нового продукта:', productId);
-
-                const priceSql = 'INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)';
-                const priceValues = [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null];
-
-                db.query(priceSql, priceValues, (err) => {
-                    if (err) {
-                        console.error('Ошибка при добавлении цен:', err);
-                        return db.rollback(() => res.status(500).json({ error: 'Ошибка при добавлении цен: ' + err.message }));
-                    }
-
-                    db.commit((err) => {
-                        if (err) {
-                            console.error('Ошибка подтверждения транзакции:', err);
-                            return db.rollback(() => res.status(500).json({ error: 'Ошибка подтверждения транзакции: ' + err.message }));
-                        }
-                        res.status(201).json({ message: 'Продукт и цены успешно добавлены!', productId, imageUrl });
-                    });
-                });
-            });
-        });
-    }
+// Базовый маршрут
+app.get("/", (req, res) => {
+  res.send("Сервер работает!");
 });
+
+// Получение всех продуктов
 app.get("/api/products", (req, res) => {
   const sql = `
-        SELECT 
-            products.id,
-            products.name,
-            products.description,
-            products.category,
-            products.image_url,
-            prices.price_small,
-            prices.price_medium,
-            prices.price_large,
-            prices.price
-        FROM 
-            products
-        LEFT JOIN 
-            prices ON products.id = prices.product_id
-    `;
-
+    SELECT 
+      products.id,
+      products.name,
+      products.description,
+      products.category,
+      products.image_url,
+      prices.price_small,
+      prices.price_medium,
+      prices.price_large,
+      prices.price
+    FROM 
+      products
+    LEFT JOIN 
+      prices ON products.id = prices.product_id
+  `;
   db.query(sql, (err, results) => {
     if (err) {
-      console.error("Ошибка при запросе данных:", err.message); // Log the error
+      console.error("Ошибка при запросе данных:", err.message);
       return res.status(500).json({ error: "Ошибка при получении продуктов" });
     }
-
-    console.log("Products retrieved:", results); // Log results to confirm
     res.json(results);
   });
 });
 
-// Маршрут для входа администратора
-app.post("/api/admin-login", async (req, res) => {
-  const { username, password } = req.body;
+// Добавление/обновление продукта
+app.post("/api/products", upload.single("image"), (req, res) => {
+  const {
+    id,
+    name,
+    description,
+    category,
+    subCategory,
+    price,
+    priceSmall,
+    priceMedium,
+    priceLarge,
+  } = req.body;
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : req.body.imageUrl;
 
-  if (!username || !password) {
+  if (!name || !category) {
+    return res.status(400).json({ error: "Поля name и category обязательны" });
+  }
+  if (!id && !imageUrl) {
     return res
       .status(400)
-      .json({ message: "Необходимо указать имя пользователя и пароль." });
+      .json({ error: "Изображение обязательно для нового продукта" });
   }
 
-  const sql = "SELECT * FROM users WHERE username = ?";
-  db.query(sql, [username], async (err, results) => {
-    if (err) {
-      console.error("Ошибка базы данных:", err);
-      return res.status(500).json({ message: "Ошибка базы данных." });
-    }
-
-    if (results.length === 0) {
-      const newAdminPassword = Math.random().toString(36).slice(-8); // Генерация пароля
-      const hashedPassword = await bcrypt.hash(newAdminPassword, 10);
-
-      const insertSql = "INSERT INTO users (username, password) VALUES (?, ?)";
-      db.query(insertSql, [username, hashedPassword], (err, result) => {
+  if (id) {
+    // Обновление существующего продукта
+    const updateProductQuery = `
+      UPDATE products 
+      SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url)
+      WHERE id = ?
+    `;
+    db.query(
+      updateProductQuery,
+      [name, description || null, category, subCategory || null, imageUrl, id],
+      (err) => {
         if (err) {
-          console.error("Ошибка создания администратора:", err);
+          console.error("Ошибка при обновлении продукта:", err);
           return res
             .status(500)
-            .json({ message: "Ошибка создания администратора." });
+            .json({ error: "Ошибка при обновлении продукта" });
         }
-
-        const token = jwt.sign(
-          { userId: result.insertId, username },
-          process.env.JWT_SECRET,
-          {
-            expiresIn: "1h",
+        res.status(200).json({ message: "Продукт успешно обновлен" });
+      }
+    );
+  } else {
+    // Добавление нового продукта
+    const productSql =
+      "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
+    db.query(
+      productSql,
+      [name, description || null, category, subCategory || null, imageUrl],
+      (err, result) => {
+        if (err) {
+          console.error("Ошибка при добавлении продукта:", err);
+          return res
+            .status(500)
+            .json({ error: "Ошибка при добавлении продукта" });
+        }
+        const productId = result.insertId;
+        const priceSql =
+          "INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)";
+        db.query(
+          priceSql,
+          [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при добавлении цен:", err);
+              return res
+                .status(500)
+                .json({ error: "Ошибка при добавлении цен" });
+            }
+            res.status(201).json({ message: "Продукт успешно добавлен", productId });
           }
         );
-
-        res.status(201).json({
-          message: "Новый администратор создан.",
-          token,
-          userId: result.insertId,
-          username,
-          generatedPassword: newAdminPassword,
-        });
-      });
-    } else {
-      const admin = results[0];
-      const validPassword = await bcrypt.compare(password, admin.password);
-
-      if (!validPassword) {
-        return res.status(401).json({ message: "Неверный пароль." });
       }
-
-      const token = jwt.sign(
-        { userId: admin.id, username },
-        process.env.JWT_SECRET,
-        {
-          expiresIn: "1h",
-        }
-      );
-
-      res.json({
-        message: "Вход выполнен успешно.",
-        token,
-        userId: admin.id,
-        username,
-      });
-    }
-  });
+    );
+  }
 });
 
-// Маршрут для удаления продукта
+// Удаление продукта
 app.delete("/api/products/:id", (req, res) => {
   const productId = req.params.id;
   const sql = "DELETE FROM products WHERE id = ?";
-  db.query(sql, [productId], (err, result) => {
+  db.query(sql, [productId], (err) => {
     if (err) {
-      console.error("Ошибка базы данных:", err);
+      console.error("Ошибка при удалении продукта:", err);
       return res.status(500).json({ error: "Ошибка базы данных" });
     }
     res.json({ message: "Продукт успешно удален" });
   });
 });
 
-// Определение маршрута /api/send-order
-// Настройка маршрута для POST
+// Вход администратора
+app.post("/api/admin-login", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ message: "Необходимо указать имя пользователя и пароль" });
+  }
+
+  const sql = "SELECT * FROM users WHERE username = ?";
+  db.query(sql, [username], async (err, results) => {
+    if (err) {
+      console.error("Ошибка базы данных:", err);
+      return res.status(500).json({ message: "Ошибка базы данных" });
+    }
+    if (results.length === 0) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const insertSql = "INSERT INTO users (username, password) VALUES (?, ?)";
+      db.query(insertSql, [username, hashedPassword], (err, result) => {
+        if (err) {
+          console.error("Ошибка создания администратора:", err);
+          return res
+            .status(500)
+            .json({ message: "Ошибка создания администратора" });
+        }
+        const token = jwt.sign({ userId: result.insertId, username }, JWT_SECRET, {
+          expiresIn: "1h",
+        });
+        res.status(201).json({
+          message: "Новый администратор создан",
+          token,
+          userId: result.insertId,
+          username,
+          generatedPassword: password,
+        });
+      });
+    } else {
+      const admin = results[0];
+      const validPassword = await bcrypt.compare(password, admin.password);
+      if (!validPassword) {
+        return res.status(401).json({ message: "Неверный пароль" });
+      }
+      const token = jwt.sign({ userId: admin.id, username }, JWT_SECRET, {
+        expiresIn: "1h",
+      });
+      res.json({ message: "Вход выполнен успешно", token, userId: admin.id, username });
+    }
+  });
+});
+
+// Отправка заказа в Telegram
 app.post("/api/send-order", async (req, res) => {
   try {
-    const { orderDetails, deliveryDetails, cartItems, discount, promoCode } =
-      req.body;
-
-    // Расчет общей стоимости
+    const { orderDetails, deliveryDetails, cartItems, discount, promoCode } = req.body;
     const total = cartItems.reduce(
       (sum, item) => sum + item.originalPrice * item.quantity,
       0
     );
-    const discountedTotal = total * (1 - discount / 100);
+    const discountedTotal = total * (1 - (discount || 0) / 100);
 
-    // Округление итоговых сумм
-    const roundedTotal = total.toFixed(2);
-    const roundedDiscountedTotal = discountedTotal.toFixed(2);
-
-    // Формирование текста заказа
     const orderText = `
 📦 *Новый заказ:*
 👤 *Имя*: ${orderDetails.name || "Нет"}
@@ -355,230 +299,54 @@ app.post("/api/send-order", async (req, res) => {
 📝 *Комментарии*: ${deliveryDetails.comments || "Нет"}
 
 🛒 *Товары:*
-${cartItems
-  .map(
-    (item) =>
-      `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`
-  )
-  .join("\n")}
+${cartItems.map((item) => `- ${item.name} (${item.quantity} шт. по ${item.originalPrice} сом)`).join("\n")}
 
-💰 *Итоговая стоимость товаров*: ${roundedTotal} сом
-${
-  promoCode
-    ? `💸 *Скидка по промокоду (${discount}%):* ${roundedDiscountedTotal} сом`
-    : "💸 Скидка не применена"
-}
-💰 *Итоговая сумма*: ${roundedDiscountedTotal} сом
-        `;
+💰 *Итоговая стоимость товаров*: ${total.toFixed(2)} сом
+${promoCode ? `💸 *Скидка (${discount}%):* ${discountedTotal.toFixed(2)} сом` : "💸 Скидка не применена"}
+💰 *Итоговая сумма*: ${discountedTotal.toFixed(2)} сом
+    `;
 
-    // Отправка сообщения в Telegram
-    await axios.post(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-      {
-        chat_id: TELEGRAM_CHAT_ID,
-        text: orderText,
-        parse_mode: "Markdown",
-      }
-    );
-
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: orderText,
+      parse_mode: "Markdown",
+    });
     res.status(200).json({ message: "Заказ отправлен в Telegram" });
   } catch (error) {
-    console.error(
-      "Ошибка при отправке заказа:",
-      error.response ? error.response.data : error.message
-    );
-    res.status(500).json({
-      message: "Ошибка отправки заказа",
-      error: error.response ? error.response.data : error.message,
-    });
+    console.error("Ошибка при отправке заказа:", error.message);
+    res.status(500).json({ message: "Ошибка отправки заказа", error: error.message });
   }
-});
-
-// Эндпоинт /api/data
-app.get("/api/data", (req, res) => {
-  const sql = `
-        SELECT 
-            products.id,
-            products.name,
-            products.description,
-            products.category,
-            products.image_url,
-            prices.price_small,
-            prices.price_medium,
-            prices.price_large,
-            prices.price
-        FROM 
-            products
-        LEFT JOIN 
-            prices ON products.id = prices.product_id
-    `;
-
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error("Ошибка при запросе данных:", err.message); // Лог ошибки
-      return res.status(500).json({ error: "Ошибка при получении данных" });
-    }
-
-    res.json(results); // Возвращаем данные из базы
-  });
-});
-
-// Обновление продукта
-app.put("/api/products/:id", upload.single("image"), (req, res) => {
-  const {
-    name,
-    description,
-    category,
-    subCategory,
-    price,
-    priceSmall,
-    priceMedium,
-    priceLarge,
-  } = req.body;
-  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-  const productId = req.params.id;
-
-  const productSql = `
-      UPDATE products 
-      SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url) 
-      WHERE id = ?
-    `;
-  const productValues = [
-    name,
-    description,
-    category,
-    subCategory,
-    imageUrl,
-    productId,
-  ];
-
-  db.beginTransaction((err) => {
-    if (err) return res.status(500).json({ error: "Ошибка транзакции" });
-
-    db.query(productSql, productValues, (err, result) => {
-      if (err)
-        return db.rollback(() =>
-          res.status(500).json({ error: "Ошибка при обновлении продукта" })
-        );
-
-      const priceSql = `
-          UPDATE prices 
-          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
-          WHERE product_id = ?
-        `;
-      const priceValues = [
-        priceSmall,
-        priceMedium,
-        priceLarge,
-        price,
-        productId,
-      ];
-
-      db.query(priceSql, priceValues, (err) => {
-        if (err)
-          return db.rollback(() =>
-            res.status(500).json({ error: "Ошибка при обновлении цен" })
-          );
-
-        db.commit((err) => {
-          if (err)
-            return db.rollback(() =>
-              res.status(500).json({ error: "Ошибка подтверждения транзакции" })
-            );
-          res
-            .status(200)
-            .json({ message: "Продукт и цены успешно обновлены!" });
-        });
-      });
-    });
-  });
-});
-
-app.get("/api/products/:id", (req, res) => {
-  const productId = req.params.id;
-
-  const sql = `
-      SELECT 
-        products.id,
-        products.name,
-        products.description,
-        products.category,
-        products.sub_category AS subCategory,
-        products.image_url,
-        prices.price_small AS priceSmall,
-        prices.price_medium AS priceMedium,
-        prices.price_large AS priceLarge,
-        prices.price
-      FROM 
-        products
-      LEFT JOIN 
-        prices ON products.id = prices.product_id
-      WHERE 
-        products.id = ?
-    `;
-
-  db.query(sql, [productId], (err, results) => {
-    if (err) {
-      console.error("Ошибка при запросе продукта:", err.message);
-      return res.status(500).json({ error: "Ошибка при получении продукта" });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: "Продукт не найден" });
-    }
-
-    res.json(results[0]);
-  });
 });
 
 // Регистрация пользователя
 app.post("/api/register", async (req, res) => {
   const { firstName, lastName, phone, email, password } = req.body;
-
   if (!firstName || !lastName || !phone || !email || !password) {
     return res.status(400).json({ message: "Заполните все поля" });
   }
 
   try {
-    // Проверка существующего пользователя
-    const [existingUser] = await new Promise((resolve, reject) => {
-      db.query(
-        "SELECT * FROM userskg WHERE email = ? OR phone = ?",
-        [email, phone],
-        (err, results) => (err ? reject(err) : resolve(results))
-      );
-    });
-
+    const [existingUser] = await query("SELECT * FROM userskg WHERE email = ? OR phone = ?", [
+      email,
+      phone,
+    ]);
     if (existingUser) {
       return res
         .status(400)
-        .json({
-          message: "Пользователь с таким email или телефоном уже существует",
-        });
+        .json({ message: "Пользователь с таким email или телефоном уже существует" });
     }
 
-    // Генерация кода подтверждения
     const confirmationCode = Math.floor(100000 + Math.random() * 900000);
-
-    // Хэширование пароля
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Сохранение временных данных
-    await new Promise((resolve, reject) => {
-      db.query(
-        "INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)",
-        [firstName, lastName, phone, email, hashedPassword, confirmationCode],
-        (err) => (err ? reject(err) : resolve())
-      );
-    });
+    await query(
+      "INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)",
+      [firstName, lastName, phone, email, hashedPassword, confirmationCode]
+    );
 
-    // Отправка кода подтверждения на email
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
     await transporter.sendMail({
@@ -586,492 +354,227 @@ app.post("/api/register", async (req, res) => {
       to: email,
       subject: "Подтверждение регистрации",
       html: `
-                <!DOCTYPE html>
-                <html lang="ru">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Подтверждение регистрации</title>
-                    <style>
-                        /* Общие стили */
-                        body {
-                            font-family: Arial, sans-serif;
-                            background-color: #f4f4f4;
-                            color: #333;
-                            margin: 0;
-                            padding: 0;
-                            text-align: center;
-                        }
-        
-                        .email-container {
-                            max-width: 600px;
-                            margin: 30px auto;
-                            padding: 20px;
-                            background-color: #fff;
-                            border-radius: 8px;
-                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                        }
-        
-                        h1 {
-                            font-size: 24px;
-                            color: #007BFF;
-                            margin-bottom: 20px;
-                        }
-        
-                        p {
-                            font-size: 16px;
-                            line-height: 1.5;
-                            color: #333;
-                        }
-        
-                        .confirmation-code {
-                            font-size: 18px;
-                            font-weight: bold;
-                            color: #FF6347;
-                        }
-        
-                        .footer {
-                            margin-top: 20px;
-                            font-size: 14px;
-                            color: #777;
-                        }
-        
-                        /* Респонсивность */
-                        @media (max-width: 480px) {
-                            .email-container {
-                                padding: 15px;
-                                width: 90%;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-        
-                    <div class="email-container">
-                        <h1>Подтверждение регистрации</h1>
-                        <p>Здравствуйте,</p>
-                        <p>Ваш код подтверждения: <span class="confirmation-code">${confirmationCode}</span></p>
-                        <p>Если вы не запрашивали код подтверждения, проигнорируйте это письмо.</p>
-        
-                        <div class="footer">
-                            <p>С уважением,<br>Команда Boodai Pizza</p>
-                        </div>
-                    </div>
-        
-                </body>
-                </html>
-            `,
+        <div style="text-align: center; font-family: Arial;">
+          <h1 style="color: #007BFF;">Подтверждение регистрации</h1>
+          <p>Ваш код подтверждения: <b style="color: #FF6347;">${confirmationCode}</b></p>
+          <p>Если вы не запрашивали код, проигнорируйте это письмо.</p>
+        </div>
+      `,
     });
 
-    res.status(201).json({ message: "Код подтверждения отправлен на почту." });
+    res.status(201).json({ message: "Код подтверждения отправлен на почту" });
   } catch (error) {
-    console.error("Ошибка при регистрации пользователя:", error);
+    console.error("Ошибка при регистрации:", error);
     res.status(500).json({ message: "Ошибка сервера" });
   }
 });
+
 // Подтверждение кода
 app.post("/api/confirm-code", async (req, res) => {
   const { code } = req.body;
-
   try {
-    // Проверка кода в temp_users
-    const [tempUser] = await new Promise((resolve, reject) => {
-      db.query(
-        "SELECT * FROM temp_users WHERE confirmation_code = ?",
-        [code],
-        (err, results) => (err ? reject(err) : resolve(results))
-      );
-    });
-
+    const [tempUser] = await query("SELECT * FROM temp_users WHERE confirmation_code = ?", [
+      code,
+    ]);
     if (!tempUser) {
       return res.status(400).json({ message: "Неверный код подтверждения" });
     }
 
-    // Перенос пользователя в основную таблицу
-    const userId = await new Promise((resolve, reject) => {
-      db.query(
-        "INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
-        [
-          tempUser.first_name,
-          tempUser.last_name,
-          tempUser.phone,
-          tempUser.email,
-          tempUser.password_hash,
-        ],
-        (err, results) => (err ? reject(err) : resolve(results.insertId))
-      );
-    });
+    const userId = await query(
+      "INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
+      [tempUser.first_name, tempUser.last_name, tempUser.phone, tempUser.email, tempUser.password_hash]
+    ).then((result) => result.insertId);
 
-    // Удаление временных данных
-    await new Promise((resolve, reject) => {
-      db.query(
-        "DELETE FROM temp_users WHERE confirmation_code = ?",
-        [code],
-        (err) => (err ? reject(err) : resolve())
-      );
-    });
+    await query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
+    const token = jwt.sign({ user_id: userId }, JWT_SECRET, { expiresIn: "24h" });
+    await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
 
-    // Создание JWT токена
-    const token = jwt.sign({ user_id: userId }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
-    });
-
-    // Сохранение токена в базу данных (если нужно)
-    await new Promise((resolve, reject) => {
-      db.query(
-        "UPDATE userskg SET token = ? WHERE user_id = ?",
-        [token, userId],
-        (err) => (err ? reject(err) : resolve())
-      );
-    });
-
-    res.status(200).json({ message: "Подтверждение успешно!", token });
+    res.status(200).json({ message: "Подтверждение успешно", token });
   } catch (error) {
     console.error("Ошибка при подтверждении кода:", error);
     res.status(500).json({ message: "Ошибка сервера" });
   }
 });
-// API для получения информации о пользователе
-// Защищенный маршрут для получения информации о пользователе
-// Защищенный маршрут для получения информации о пользователе
-app.get("/api/user", (req, res) => {
-  // Извлечение токена из заголовка Authorization
-  const token = req.headers["authorization"]?.split(" ")[1];
 
-  if (!token) {
-    return res
-      .status(401)
-      .json({ message: "Необходим токен для доступа к этому ресурсу" });
+// Вход пользователя
+app.post("/api/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: "Введите email и пароль" });
   }
 
-  // Проверка токена
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+  try {
+    const [user] = await query("SELECT * FROM userskg WHERE email = ?", [email]);
+    if (!user) {
+      return res.status(404).json({ message: "Пользователь не найден" });
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordMatch) {
+      return res.status(400).json({ message: "Неверный пароль" });
+    }
+
+    const token = jwt.sign({ user_id: user.user_id }, JWT_SECRET, { expiresIn: "1h" });
+    await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user.user_id]);
+    res.json({ message: "Вход успешен", token });
+  } catch (error) {
+    console.error("Ошибка при входе:", error);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
+});
+
+// Получение информации о пользователе
+app.get("/api/user", (req, res) => {
+  const token = req.headers["authorization"]?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "Требуется токен" });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(403).json({ message: "Неверный токен" });
     }
-
-    // SQL-запрос для получения данных пользователя
-    const sql = `
-        SELECT 
-            user_id, 
-            first_name AS username, 
-            email, 
-            phone, 
-            balance 
-        FROM userskg 
-        WHERE user_id = ?`;
-
+    const sql = "SELECT user_id, first_name AS username, email, phone, balance FROM userskg WHERE user_id = ?";
     db.query(sql, [decoded.user_id], (error, results) => {
       if (error) {
-        console.error("Ошибка запроса к базе данных:", error);
+        console.error("Ошибка запроса:", error);
         return res.status(500).json({ message: "Ошибка сервера" });
       }
-
       if (results.length === 0) {
         return res.status(404).json({ message: "Пользователь не найден" });
       }
-
-      // Возврат данных пользователя
-      const user = results[0];
-      res.json({
-        user_id: user.user_id,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        balance: user.balance,
-      });
+      res.json(results[0]);
     });
   });
 });
-app.post("/api/login", (req, res) => {
-  const { email, password } = req.body;
 
-  // Проверка на наличие обязательных полей
-  if (!email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Пожалуйста, введите email и пароль!" });
-  }
-
-  const sql = "SELECT * FROM userskg WHERE email = ?";
-  db.query(sql, [email], async (error, results) => {
-    if (error) {
-      console.error("Ошибка базы данных:", error);
-      return res.status(500).json({ message: "Ошибка сервера" });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ message: "Пользователь не найден!" });
-    }
-
-    const user = results[0];
-
-    // Проверка наличия хэшированного пароля
-    if (!user.password_hash) {
-      console.error(
-        "Пароль отсутствует в базе данных для пользователя с email:",
-        email
-      );
-      return res
-        .status(500)
-        .json({ message: "Ошибка сервера: пароль не найден." });
-    }
-
-    try {
-      // Сравнение паролей
-      const isPasswordMatch = await bcrypt.compare(
-        password,
-        user.password_hash
-      );
-
-      if (!isPasswordMatch) {
-        return res.status(400).json({ message: "Неверный пароль!" });
-      }
-
-      // Если токен уже существует в базе данных, возвращаем его
-      if (user.token) {
-        return res.json({
-          message: "Вход успешен",
-          token: user.token,
-          userId: user.user_id,
-        });
-      }
-
-      // Если токена нет, создаем новый, сохраняем и возвращаем
-      const token = jwt.sign(
-        { user_id: user.user_id },
-        process.env.JWT_SECRET,
-        { expiresIn: "1h" }
-      );
-
-      const updateTokenQuery = "UPDATE userskg SET token = ? WHERE user_id = ?";
-      db.query(updateTokenQuery, [token, user.user_id], (error) => {
-        if (error) {
-          console.error("Ошибка при обновлении токена:", error);
-          return res
-            .status(500)
-            .json({ message: "Ошибка при сохранении токена" });
-        }
-
-        res.json({ message: "Вход успешен", token });
-      });
-    } catch (err) {
-      console.error("Ошибка при сравнении пароля:", err);
-      return res
-        .status(500)
-        .json({ message: "Ошибка сервера при проверке пароля." });
-    }
-  });
-});
-
-// Маршрут для получения всех пользователей
+// Получение всех пользователей
 app.get("/api/users", (req, res) => {
   const query = "SELECT * FROM userskg";
-
   db.query(query, (err, results) => {
     if (err) {
-      console.error("Ошибка при выполнении запроса:", err);
-      res.status(500).send("Ошибка сервера");
-      return;
+      console.error("Ошибка при запросе пользователей:", err);
+      return res.status(500).json({ message: "Ошибка сервера" });
     }
-    res.json(results); // Отправка данных в ответе
+    res.json(results);
   });
 });
 
+// Удаление пользователя
 app.delete("/api/users/:user_id", (req, res) => {
-  const userId = parseInt(req.params.user_id); // Корректный парсинг user_id
-
+  const userId = parseInt(req.params.user_id);
   if (isNaN(userId)) {
-    return res.status(400).send("Неверный идентификатор пользователя");
+    return res.status(400).json({ message: "Неверный ID пользователя" });
   }
 
-  // Убедитесь, что скидка, если она передается, также проверяется
-  // Если это не связано с удалением, можно убрать проверку скидки
-  const discount = req.body.discount; // Пример, если скидка передается в теле запроса
-  if (discount && (discount < 1 || discount > 100)) {
-    return res.status(400).send("Процент скидки должен быть от 1 до 100");
-  }
-
-  // Запрос на удаление пользователя
-  const deleteUserQuery = "DELETE FROM userskg WHERE user_id = ?";
-  db.query(deleteUserQuery, [userId], (err, result) => {
+  const sql = "DELETE FROM userskg WHERE user_id = ?";
+  db.query(sql, [userId], (err, result) => {
     if (err) {
       console.error("Ошибка при удалении пользователя:", err);
-      return res
-        .status(500)
-        .send("Ошибка на сервере при удалении пользователя");
+      return res.status(500).json({ message: "Ошибка сервера" });
     }
-
-    // Проверка, был ли пользователь удален
     if (result.affectedRows === 0) {
-      return res.status(404).send("Пользователь не найден");
+      return res.status(404).json({ message: "Пользователь не найден" });
     }
-
-    res.status(200).send("Пользователь успешно удален");
+    res.json({ message: "Пользователь успешно удален" });
   });
 });
 
-// Функция для генерации промокода
+// Генерация промокода
 function generatePromoCode() {
   return "PROMO-" + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
 
-// Маршрут для обновления и отправки промокода пользователю
-// Маршрут для получения или генерации промокода
-// API для отправки промокодов
-app.post("/api/users/:user_id/promo", (req, res) => {
-  const userId = parseInt(req.params.user_id, 10);
+// Отправка промокода
+app.post("/api/users/:user_id/promo", async (req, res) => {
+  const userId = parseInt(req.params.user_id);
+  const { discount } = req.body;
 
   if (isNaN(userId)) {
-    return res.status(400).send("Некорректный идентификатор пользователя");
+    return res.status(400).json({ message: "Неверный ID пользователя" });
   }
-
-  const { discount } = req.body; // Получаем discount из тела запроса
   if (!discount || discount < 1 || discount > 100) {
-    return res.status(400).send("Скидка должна быть в диапазоне от 1 до 100");
+    return res.status(400).json({ message: "Скидка должна быть от 1 до 100" });
   }
 
-  db.query(
-    "SELECT email, promo_code, promo_code_created_at FROM userskg WHERE user_id = ?",
-    [userId],
-    (err, users) => {
-      if (err) {
-        console.error("Ошибка при получении пользователя:", err);
-        return res.status(500).send("Ошибка сервера");
-      }
-
-      const user = users[0];
-      if (!user) {
-        return res.status(404).send("Пользователь не найден");
-      }
-
-      const now = new Date();
-      const promoCode = generatePromoCode();
-
-      db.query(
-        "UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?",
-        [promoCode, now, discount, userId],
-        (updateErr) => {
-          if (updateErr) {
-            console.error("Ошибка при обновлении промокода:", updateErr);
-            return res.status(500).send("Ошибка сервера");
-          }
-
-          const transporter = nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-              user: "vorlodgamess@gmail.com",
-              pass: "hpmjnrjmaedrylve",
-            },
-          });
-
-          const mailOptions = {
-            from: "vorlodgamess@gmail.com",
-            to: user.email,
-            subject: "Ваш новый промокод от Boodya Pizza",
-            html: `
-                    <div style="background-color: #000; color: #fff; text-align: center; padding: 20px; font-family: Arial;">
-                        <h1 style="color: #FFD700;">Boodya Pizza</h1>
-                        <p>Ваш уникальный промокод:</p>
-                        <p style="font-size: 24px; font-weight: bold; color:rgb(255, 111, 0);">${promoCode}</p>
-                        <p>Скидка: <strong>${discount}%</strong></p>
-                        <p>Промокод действителен 7 дней с момента получения.</p>
-                        <p>Спасибо, что выбрали Boodya Pizza!</p>
-                    </div>
-                    `,
-          };
-
-          transporter.sendMail(mailOptions, (mailErr) => {
-            if (mailErr) {
-              console.error("Ошибка при отправке письма:", mailErr);
-              return res.status(500).send("Ошибка при отправке письма");
-            }
-
-            res.send({ promoCode, discount });
-          });
-        }
-      );
+  try {
+    const [user] = await query("SELECT email FROM userskg WHERE user_id = ?", [userId]);
+    if (!user) {
+      return res.status(404).json({ message: "Пользователь не найден" });
     }
-  );
+
+    const promoCode = generatePromoCode();
+    const now = new Date();
+    await query(
+      "UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?",
+      [promoCode, now, discount, userId]
+    );
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: "vorlodgamess@gmail.com", pass: "hpmjnrjmaedrylve" },
+    });
+
+    await transporter.sendMail({
+      from: "vorlodgamess@gmail.com",
+      to: user.email,
+      subject: "Ваш новый промокод от Boodya Pizza",
+      html: `
+        <div style="background-color: #000; color: #fff; text-align: center; padding: 20px; font-family: Arial;">
+          <h1 style="color: #FFD700;">Boodya Pizza</h1>
+          <p>Ваш уникальный промокод: <b style="color: #FF6347;">${promoCode}</b></p>
+          <p>Скидка: <strong>${discount}%</strong></p>
+          <p>Действителен 7 дней.</p>
+        </div>
+      `,
+    });
+
+    res.json({ promoCode, discount });
+  } catch (error) {
+    console.error("Ошибка при отправке промокода:", error);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
 
-// API для проверки промокода
+// Проверка промокода
 app.post("/api/validate-promo", (req, res) => {
   const { promoCode } = req.body;
-
-  console.log("Получен промокод:", promoCode); // Логируем промокод
-
   if (!promoCode) {
-    return res.status(400).json({ message: "Промокод не может быть пустым." });
+    return res.status(400).json({ message: "Промокод не указан" });
   }
 
   const query = "SELECT * FROM userskg WHERE promo_code = ?";
   db.query(query, [promoCode], (err, results) => {
     if (err) {
-      console.error("Ошибка в запросе:", err); // Логируем ошибку запроса
-      return res.status(500).json({ message: "Ошибка сервера", error: err });
+      console.error("Ошибка при проверке промокода:", err);
+      return res.status(500).json({ message: "Ошибка сервера" });
     }
-
     if (results.length === 0) {
-      return res.status(400).json({ message: "Неверный промокод." });
+      return res.status(400).json({ message: "Неверный промокод" });
     }
 
-    const promoCodeDetails = results[0];
-    const currentDate = new Date();
-    const promoCodeCreatedAt = new Date(promoCodeDetails.promo_code_created_at);
-
-    // Устанавливаем срок действия промокода: 7 дней (7 * 24 часа)
-    const expiryDate = new Date(
-      promoCodeCreatedAt.getTime() + 7 * 24 * 60 * 60 * 1000
-    );
-
-    if (currentDate > expiryDate) {
-      return res.status(400).json({ message: "Промокод истек." });
+    const { promo_code_created_at, discount } = results[0];
+    const createdAt = new Date(promo_code_created_at);
+    const expiryDate = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    if (new Date() > expiryDate) {
+      return res.status(400).json({ message: "Промокод истек" });
     }
 
-    // Получаем значение скидки из базы данных
-    const discount = promoCodeDetails.discount;
-
-    if (!discount || discount <= 0) {
-      return res
-        .status(400)
-        .json({ message: "Скидка недействительна для данного промокода." });
-    }
-
-    // Промокод действителен, возвращаем скидку
-    res.json({ discount: discount });
+    res.json({ discount });
   });
 });
 
-// API для аутентификации пользователя через user_id
-app.post("/api/authenticate", (req, res) => {
-  const { user_id } = req.body;
-
-  // Проверка на наличие user_id в теле запроса
-  if (!user_id) {
-    return res.status(400).json({ error: "User ID is required" });
-  }
-
-  // SQL запрос для поиска пользователя по user_id
-  const query = "SELECT * FROM userskg WHERE user_id = ?";
-  db.query(query, [user_id], (err, results) => {
-    if (err) {
-      console.error("Ошибка при выполнении запроса:", err);
-      return res.status(500).json({ error: "Ошибка сервера" });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: "Пользователь не найден" });
-    }
-
-    // Возвращаем информацию о пользователе и промокод
-    res.json({
-      promoCode: results[0].promoCode || null,
-      user: results[0],
+// Вспомогательная функция для асинхронных запросов
+function query(sql, params) {
+  return new Promise((resolve, reject) => {
+    db.query(sql, params, (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
     });
   });
-});
+}
 
+// Запуск сервера
 app.listen(5000, () => {
   console.log("Сервер запущен на порту 5000");
 });
