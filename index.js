@@ -133,11 +133,9 @@ app.get("/api/products", (req, res) => {
     res.json(results);
   });
 });
-
-// Добавление/обновление продукта
+// Добавление/обновление продукта (оставляем POST для создания нового продукта)
 app.post("/api/products", upload.single("image"), (req, res) => {
   const {
-    id,
     name,
     description,
     category,
@@ -152,67 +150,108 @@ app.post("/api/products", upload.single("image"), (req, res) => {
   if (!name || !category) {
     return res.status(400).json({ error: "Поля name и category обязательны" });
   }
-  if (!id && !imageUrl) {
+  if (!imageUrl) {
     return res
       .status(400)
       .json({ error: "Изображение обязательно для нового продукта" });
   }
 
-  if (id) {
-    // Обновление существующего продукта
-    const updateProductQuery = `
-      UPDATE products 
-      SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url)
-      WHERE id = ?
-    `;
-    db.query(
-      updateProductQuery,
-      [name, description || null, category, subCategory || null, imageUrl, id],
-      (err) => {
-        if (err) {
-          console.error("Ошибка при обновлении продукта:", err);
-          return res
-            .status(500)
-            .json({ error: "Ошибка при обновлении продукта" });
-        }
-        res.status(200).json({ message: "Продукт успешно обновлен" });
+  // Добавление нового продукта
+  const productSql =
+    "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
+  db.query(
+    productSql,
+    [name, description || null, category, subCategory || null, imageUrl],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при добавлении продукта:", err);
+        return res.status(500).json({ error: "Ошибка при добавлении продукта" });
       }
-    );
-  } else {
-    // Добавление нового продукта
-    const productSql =
-      "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
-    db.query(
-      productSql,
-      [name, description || null, category, subCategory || null, imageUrl],
-      (err, result) => {
-        if (err) {
-          console.error("Ошибка при добавлении продукта:", err);
-          return res
-            .status(500)
-            .json({ error: "Ошибка при добавлении продукта" });
-        }
-        const productId = result.insertId;
-        const priceSql =
-          "INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)";
-        db.query(
-          priceSql,
-          [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null],
-          (err) => {
-            if (err) {
-              console.error("Ошибка при добавлении цен:", err);
-              return res
-                .status(500)
-                .json({ error: "Ошибка при добавлении цен" });
-            }
-            res.status(201).json({ message: "Продукт успешно добавлен", productId });
+      const productId = result.insertId;
+      const priceSql =
+        "INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)";
+      db.query(
+        priceSql,
+        [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null],
+        (err) => {
+          if (err) {
+            console.error("Ошибка при добавлении цен:", err);
+            return res.status(500).json({ error: "Ошибка при добавлении цен" });
           }
-        );
-      }
-    );
-  }
+          res.status(201).json({ message: "Продукт успешно добавлен", productId });
+        }
+      );
+    }
+  );
 });
 
+// Обновление продукта (новый маршрут PUT)
+app.put("/api/products/:id", upload.single("image"), (req, res) => {
+  const productId = req.params.id;
+  const {
+    name,
+    description,
+    category,
+    subCategory,
+    price,
+    priceSmall,
+    priceMedium,
+    priceLarge,
+  } = req.body;
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : req.body.imageUrl;
+
+  if (!name || !category) {
+    return res.status(400).json({ error: "Поля name и category обязательны" });
+  }
+
+  // Обновление данных продукта
+  const updateProductQuery = `
+    UPDATE products 
+    SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url)
+    WHERE id = ?
+  `;
+  db.query(
+    updateProductQuery,
+    [name, description || null, category, subCategory || null, imageUrl, productId],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при обновлении продукта:", err);
+        return res.status(500).json({ error: "Ошибка при обновлении продукта" });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Продукт не найден" });
+      }
+
+      // Обновление цен (если они переданы)
+      if (price || priceSmall || priceMedium || priceLarge) {
+        const updatePriceQuery = `
+          UPDATE prices 
+          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
+          WHERE product_id = ?
+        `;
+        db.query(
+          updatePriceQuery,
+          [
+            priceSmall || null,
+            priceMedium || null,
+            priceLarge || null,
+            price || null,
+            productId,
+          ],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при обновлении цен:", err);
+              return res.status(500).json({ error: "Ошибка при обновлении цен" });
+            }
+            res.status(200).json({ message: "Продукт успешно обновлен" });
+          }
+        );
+      } else {
+        res.status(200).json({ message: "Продукт успешно обновлен" });
+      }
+    }
+  );
+});
 // Удаление продукта
 app.delete("/api/products/:id", (req, res) => {
   const productId = req.params.id;
