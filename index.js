@@ -457,7 +457,7 @@ app.post("/api/login", async (req, res) => {
     await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user.user_id]);
     res.json({ message: "Вход успешен", token });
   } catch (error) {
-    console.error("Ошибка при входе:", error);
+    console.error("Ошибка входе:", error);
     res.status(500).json({ message: "Ошибка сервера" });
   }
 });
