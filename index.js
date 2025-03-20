@@ -101,31 +101,250 @@ db.connect((err) => {
   });
 });
 
+// Middleware для проверки администратора
+const authenticateAdmin = (req, res, next) => {
+  const token = req.headers["authorization"]?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "Требуется токен" });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Неверный токен" });
+    }
+    const sql = "SELECT role FROM users WHERE id = ?";
+    db.query(sql, [decoded.userId], (error, results) => {
+      if (error || results.length === 0 || results[0].role !== "admin") {
+        return res.status(403).json({ message: "Доступ запрещён" });
+      }
+      req.user = decoded;
+      next();
+    });
+  });
+};
+
 // Базовый маршрут
 app.get("/", (req, res) => {
   res.send("Сервер работает!");
 });
 
-// Получение всех продуктов
-app.get("/api/products", (req, res) => {
+// Получение всех филиалов
+app.get("/api/branches", authenticateAdmin, (req, res) => {
+  const sql = "SELECT * FROM branches";
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при получении филиалов:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении филиалов" });
+    }
+    res.json(results);
+  });
+});
+
+// Добавление нового филиала
+app.post("/api/branches", authenticateAdmin, (req, res) => {
+  const { name, address, phone, latitude, longitude, status } = req.body;
+
+  if (!name || !address) {
+    return res.status(400).json({ error: "Название и адрес обязательны" });
+  }
+
+  // Проверка широты и долготы
+  if (latitude && (latitude < -90 || latitude > 90)) {
+    return res.status(400).json({ error: "Широта должна быть в диапазоне от -90 до 90" });
+  }
+  if (longitude && (longitude < -180 || longitude > 180)) {
+    return res.status(400).json({ error: "Долгота должна быть в диапазоне от -180 до 180" });
+  }
+
+  const normalizedStatus = status === "Активен" ? "active" : "inactive";
+  const sql =
+    "INSERT INTO branches (name, address, phone, latitude, longitude, status) VALUES (?, ?, ?, ?, ?, ?)";
+  db.query(
+    sql,
+    [name, address, phone || null, latitude || null, longitude || null, normalizedStatus],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при добавлении филиала:", err.message);
+        return res.status(500).json({ error: "Ошибка при добавлении филиала" });
+      }
+      res.status(201).json({
+        id: result.insertId,
+        name,
+        address,
+        phone,
+        latitude,
+        longitude,
+        status: normalizedStatus,
+      });
+    }
+  );
+});
+
+// Обновление филиала
+app.put("/api/branches/:id", authenticateAdmin, (req, res) => {
+  const branchId = req.params.id;
+  const { name, address, phone, latitude, longitude, status } = req.body;
+
+  if (!name || !address) {
+    return res.status(400).json({ error: "Название и адрес обязательны" });
+  }
+
+  // Проверка широты и долготы
+  if (latitude && (latitude < -90 || latitude > 90)) {
+    return res.status(400).json({ error: "Широта должна быть в диапазоне от -90 до 90" });
+  }
+  if (longitude && (longitude < -180 || longitude > 180)) {
+    return res.status(400).json({ error: "Долгота должна быть в диапазоне от -180 до 180" });
+  }
+
+  const normalizedStatus = status === "Активен" ? "active" : "inactive";
+  const sql =
+    "UPDATE branches SET name = ?, address = ?, phone = ?, latitude = ?, longitude = ?, status = ? WHERE id = ?";
+  db.query(
+    sql,
+    [name, address, phone || null, latitude || null, longitude || null, normalizedStatus, branchId],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при обновлении филиала:", err.message);
+        return res.status(500).json({ error: "Ошибка при обновлении филиала" });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Филиал не найден" });
+      }
+      res.json({
+        id: branchId,
+        name,
+        address,
+        phone,
+        latitude,
+        longitude,
+        status: normalizedStatus,
+      });
+    }
+  );
+});
+
+// Удаление филиала
+app.delete("/api/branches/:id", authenticateAdmin, (req, res) => {
+  const branchId = req.params.id;
+  const sql = "DELETE FROM branches WHERE id = ?";
+  db.query(sql, [branchId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении филиала:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении филиала" });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Филиал не найден" });
+    }
+    res.json({ message: "Филиал успешно удалён" });
+  });
+});
+
+// Получение всех категорий
+app.get("/api/categories", authenticateAdmin, (req, res) => {
+  const sql = "SELECT * FROM categories ORDER BY priority ASC";
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при получении категорий:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении категорий" });
+    }
+    res.json(results);
+  });
+});
+
+// Добавление новой категории
+app.post("/api/categories", authenticateAdmin, (req, res) => {
+  const { name, emoji, priority } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: "Название обязательно" });
+  }
+
+  const sql = "INSERT INTO categories (name, emoji, priority) VALUES (?, ?, ?)";
+  db.query(sql, [name, emoji || null, priority || 0], (err, result) => {
+    if (err) {
+      console.error("Ошибка при добавлении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при добавлении категории" });
+    }
+    res.status(201).json({
+      id: result.insertId,
+      name,
+      emoji,
+      priority,
+    });
+  });
+});
+
+// Обновление категории
+app.put("/api/categories/:id", authenticateAdmin, (req, res) => {
+  const categoryId = req.params.id;
+  const { name, emoji, priority } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: "Название обязательно" });
+  }
+
+  const sql = "UPDATE categories SET name = ?, emoji = ?, priority = ? WHERE id = ?";
+  db.query(sql, [name, emoji || null, priority || 0, categoryId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при обновлении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при обновлении категории" });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Категория не найдена" });
+    }
+    res.json({
+      id: categoryId,
+      name,
+      emoji,
+      priority,
+    });
+  });
+});
+
+// Удаление категории
+app.delete("/api/categories/:id", authenticateAdmin, (req, res) => {
+  const categoryId = req.params.id;
+  const sql = "DELETE FROM categories WHERE id = ?";
+  db.query(sql, [categoryId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении категории" });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Категория не найдена" });
+    }
+    res.json({ message: "Категория успешно удалена" });
+  });
+});
+
+// Получение всех продуктов для конкретного филиала
+app.get("/api/branches/:branchId/products", authenticateAdmin, (req, res) => {
+  const branchId = req.params.branchId;
   const sql = `
     SELECT 
-      products.id,
-      products.name,
-      products.description,
-      products.category,
-      products.sub_category,
-      products.image_url,
-      prices.price_small,
-      prices.price_medium,
-      prices.price_large,
-      prices.price
+      p.id,
+      p.name,
+      p.description,
+      p.category_id,
+      c.name as category,
+      p.sub_category,
+      p.image_url,
+      bp.price_small,
+      bp.price_medium,
+      bp.price_large,
+      bp.price,
+      bp.status
     FROM 
-      products
-    LEFT JOIN 
-      prices ON products.id = prices.product_id
+      products p
+    JOIN 
+      categories c ON p.category_id = c.id
+    JOIN 
+      branch_products bp ON p.id = bp.product_id
+    WHERE 
+      bp.branch_id = ?
   `;
-  db.query(sql, (err, results) => {
+  db.query(sql, [branchId], (err, results) => {
     if (err) {
       console.error("Ошибка при запросе данных:", err.message);
       return res.status(500).json({ error: "Ошибка при получении продуктов" });
@@ -134,8 +353,9 @@ app.get("/api/products", (req, res) => {
   });
 });
 
-// Добавление нового продукта
-app.post("/api/products", upload.single("image"), (req, res) => {
+// Добавление нового продукта для филиала
+app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("image"), (req, res) => {
+  const branchId = req.params.branchId;
   const {
     name,
     description,
@@ -157,48 +377,60 @@ app.post("/api/products", upload.single("image"), (req, res) => {
       .json({ error: "Изображение обязательно для нового продукта" });
   }
 
-  // Определяем, является ли продукт пиццей
-  const isPizza = category === "Пиццы" || subCategory === "Пиццы";
-
-  // Добавление нового продукта
-  const productSql =
-    "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
-  db.query(
-    productSql,
-    [name, description || null, category, subCategory || null, imageUrl],
-    (err, result) => {
-      if (err) {
-        console.error("Ошибка при добавлении продукта:", err);
-        return res.status(500).json({ error: "Ошибка при добавлении продукта" });
-      }
-      const productId = result.insertId;
-
-      // Вставка цен в зависимости от типа продукта
-      const priceSql =
-        "INSERT INTO prices (product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?)";
-      db.query(
-        priceSql,
-        [
-          productId,
-          isPizza ? (priceSmall || null) : null,
-          isPizza ? (priceMedium || null) : null,
-          isPizza ? (priceLarge || null) : null,
-          isPizza ? null : (price || null),
-        ],
-        (err) => {
-          if (err) {
-            console.error("Ошибка при добавлении цен:", err);
-            return res.status(500).json({ error: "Ошибка при добавлении цен" });
-          }
-          res.status(201).json({ message: "Продукт успешно добавлен", productId });
-        }
-      );
+  // Находим category_id по имени категории
+  const categorySql = "SELECT id FROM categories WHERE name = ?";
+  db.query(categorySql, [category], (err, categoryResult) => {
+    if (err) {
+      console.error("Ошибка при поиске категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при поиске категории" });
     }
-  );
+    if (categoryResult.length === 0) {
+      return res.status(400).json({ error: "Категория не найдена" });
+    }
+    const categoryId = categoryResult[0].id;
+
+    // Добавление нового продукта
+    const productSql =
+      "INSERT INTO products (name, description, category_id, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
+    db.query(
+      productSql,
+      [name, description || null, categoryId, subCategory || null, imageUrl],
+      (err, result) => {
+        if (err) {
+          console.error("Ошибка при добавлении продукта:", err.message);
+          return res.status(500).json({ error: "Ошибка при добавлении продукта" });
+        }
+        const productId = result.insertId;
+
+        // Добавление связи с филиалом и цен
+        const branchProductSql =
+          "INSERT INTO branch_products (branch_id, product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?, ?)";
+        db.query(
+          branchProductSql,
+          [
+            branchId,
+            productId,
+            priceSmall || null,
+            priceMedium || null,
+            priceLarge || null,
+            price || null,
+          ],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при добавлении цен:", err.message);
+              return res.status(500).json({ error: "Ошибка при добавлении цен" });
+            }
+            res.status(201).json({ message: "Продукт успешно добавлен", productId });
+          }
+        );
+      }
+    );
+  });
 });
 
-// Обновление продукта
-app.put("/api/products/:id", upload.single("image"), (req, res) => {
+// Обновление продукта для филиала
+app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single("image"), (req, res) => {
+  const branchId = req.params.branchId;
   const productId = req.params.id;
   const {
     name,
@@ -216,98 +448,94 @@ app.put("/api/products/:id", upload.single("image"), (req, res) => {
     return res.status(400).json({ error: "Поля name и category обязательны" });
   }
 
-  // Определяем, является ли продукт пиццей
-  const isPizza = category === "Пиццы" || subCategory === "Пиццы";
-
-  // Обновление данных продукта
-  const updateProductQuery = `
-    UPDATE products 
-    SET name = ?, description = ?, category = ?, sub_category = ?, image_url = COALESCE(?, image_url)
-    WHERE id = ?
-  `;
-  db.query(
-    updateProductQuery,
-    [name, description || null, category, subCategory || null, imageUrl, productId],
-    (err, result) => {
-      if (err) {
-        console.error("Ошибка при обновлении продукта:", err);
-        return res.status(500).json({ error: "Ошибка при обновлении продукта" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "Продукт не найден" });
-      }
-
-      // Проверяем, есть ли запись в таблице prices
-      const checkPriceQuery = "SELECT * FROM prices WHERE product_id = ?";
-      db.query(checkPriceQuery, [productId], (err, priceRows) => {
-        if (err) {
-          console.error("Ошибка при проверке цен:", err);
-          return res.status(500).json({ error: "Ошибка при проверке цен" });
-        }
-
-        if (priceRows.length > 0) {
-          // Обновляем существующую запись
-          const updatePriceQuery = `
-            UPDATE prices 
-            SET price_small = ?, price_medium = ?, price_large = ?, price = ?
-            WHERE product_id = ?
-          `;
-          db.query(
-            updatePriceQuery,
-            [
-              isPizza ? (priceSmall || null) : null,
-              isPizza ? (priceMedium || null) : null,
-              isPizza ? (priceLarge || null) : null,
-              isPizza ? null : (price || null),
-              productId,
-            ],
-            (err) => {
-              if (err) {
-                console.error("Ошибка при обновлении цен:", err);
-                return res.status(500).json({ error: "Ошибка при обновлении цен" });
-              }
-              res.status(200).json({ message: "Продукт успешно обновлен" });
-            }
-          );
-        } else {
-          // Вставляем новую запись
-          const insertPriceQuery = `
-            INSERT INTO prices (product_id, price_small, price_medium, price_large, price) 
-            VALUES (?, ?, ?, ?, ?)
-          `;
-          db.query(
-            insertPriceQuery,
-            [
-              productId,
-              isPizza ? (priceSmall || null) : null,
-              isPizza ? (priceMedium || null) : null,
-              isPizza ? (priceLarge || null) : null,
-              isPizza ? null : (price || null),
-            ],
-            (err) => {
-              if (err) {
-                console.error("Ошибка при добавлении цен:", err);
-                return res.status(500).json({ error: "Ошибка при добавлении цен" });
-              }
-              res.status(200).json({ message: "Продукт успешно обновлен" });
-            }
-          );
-        }
-      });
+  // Находим category_id по имени категории
+  const categorySql = "SELECT id FROM categories WHERE name = ?";
+  db.query(categorySql, [category], (err, categoryResult) => {
+    if (err) {
+      console.error("Ошибка при поиске категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при поиске категории" });
     }
-  );
+    if (categoryResult.length === 0) {
+      return res.status(400).json({ error: "Категория не найдена" });
+    }
+    const categoryId = categoryResult[0].id;
+
+    // Обновление данных продукта
+    const updateProductQuery = `
+      UPDATE products 
+      SET name = ?, description = ?, category_id = ?, sub_category = ?, image_url = COALESCE(?, image_url)
+      WHERE id = ?
+    `;
+    db.query(
+      updateProductQuery,
+      [name, description || null, categoryId, subCategory || null, imageUrl, productId],
+      (err, result) => {
+        if (err) {
+          console.error("Ошибка при обновлении продукта:", err.message);
+          return res.status(500).json({ error: "Ошибка при обновлении продукта" });
+        }
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ error: "Продукт не найден" });
+        }
+
+        // Обновление цен в branch_products
+        const updatePriceQuery = `
+          UPDATE branch_products 
+          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
+          WHERE branch_id = ? AND product_id = ?
+        `;
+        db.query(
+          updatePriceQuery,
+          [priceSmall || null, priceMedium || null, priceLarge || null, price || null, branchId, productId],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при обновлении цен:", err.message);
+              return res.status(500).json({ error: "Ошибка при обновлении цен" });
+            }
+            res.status(200).json({ message: "Продукт успешно обновлен" });
+          }
+        );
+      }
+    );
+  });
 });
 
-// Удаление продукта
-app.delete("/api/products/:id", (req, res) => {
+// Удаление продукта из филиала
+app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, (req, res) => {
+  const branchId = req.params.branchId;
   const productId = req.params.id;
-  const sql = "DELETE FROM products WHERE id = ?";
-  db.query(sql, [productId], (err) => {
+
+  // Удаляем связь с филиалом
+  const deleteBranchProductSql = "DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?";
+  db.query(deleteBranchProductSql, [branchId, productId], (err, result) => {
     if (err) {
-      console.error("Ошибка при удалении продукта:", err);
-      return res.status(500).json({ error: "Ошибка базы данных" });
+      console.error("Ошибка при удалении связи с филиалом:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении связи с филиалом" });
     }
-    res.json({ message: "Продукт успешно удален" });
+
+    // Проверяем, есть ли продукт в других филиалах
+    const checkOtherBranchesSql = "SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?";
+    db.query(checkOtherBranchesSql, [productId], (err, countResult) => {
+      if (err) {
+        console.error("Ошибка при проверке других филиалов:", err.message);
+        return res.status(500).json({ error: "Ошибка при проверке других филиалов" });
+      }
+
+      const count = countResult[0].count;
+      if (count === 0) {
+        // Если продукт больше нигде не используется, удаляем его из products
+        const deleteProductSql = "DELETE FROM products WHERE id = ?";
+        db.query(deleteProductSql, [productId], (err) => {
+          if (err) {
+            console.error("Ошибка при удалении продукта:", err.message);
+            return res.status(500).json({ error: "Ошибка при удалении продукта" });
+          }
+          res.json({ message: "Продукт успешно удалён" });
+        });
+      } else {
+        res.json({ message: "Продукт удалён из филиала" });
+      }
+    });
   });
 });
 
@@ -534,7 +762,7 @@ app.get("/api/user", (req, res) => {
 });
 
 // Получение всех пользователей
-app.get("/api/users", (req, res) => {
+app.get("/api/users", authenticateAdmin, (req, res) => {
   const query = "SELECT * FROM userskg";
   db.query(query, (err, results) => {
     if (err) {
@@ -546,7 +774,7 @@ app.get("/api/users", (req, res) => {
 });
 
 // Удаление пользователя
-app.delete("/api/users/:user_id", (req, res) => {
+app.delete("/api/users/:user_id", authenticateAdmin, (req, res) => {
   const userId = parseInt(req.params.user_id);
   if (isNaN(userId)) {
     return res.status(400).json({ message: "Неверный ID пользователя" });
@@ -571,7 +799,7 @@ function generatePromoCode() {
 }
 
 // Отправка промокода
-app.post("/api/users/:user_id/promo", async (req, res) => {
+app.post("/api/users/:user_id/promo", authenticateAdmin, async (req, res) => {
   const userId = parseInt(req.params.user_id);
   const { discount } = req.body;
 
