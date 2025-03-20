@@ -1,5 +1,5 @@
 const express = require("express");
-const mysql = require("mysql");
+const mysql = require("mysql2"); 
 const multer = require("multer");
 const path = require("path");
 const axios = require("axios");
