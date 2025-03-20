@@ -1,5 +1,5 @@
 const express = require("express");
-const mysql = require("mysql2"); // Заменяем mysql на mysql2
+const mysql = require("mysql2"); 
 const multer = require("multer");
 const path = require("path");
 const axios = require("axios");
@@ -43,26 +43,21 @@ if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
 
-// Настройка базы данных с пулом соединений
-const db = mysql.createPool({
+// Настройка базы данных
+const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  connectTimeout: 30000,
 });
 
-// Проверяем подключение
-db.getConnection((err, connection) => {
+// Подключение к базе данных
+db.connect((err) => {
   if (err) {
     console.error("Ошибка подключения к базе данных:", err.message);
     process.exit(1);
   }
   console.log("Подключено к базе данных MySQL");
-  connection.release();
 
   // Проверка наличия администратора
   const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
@@ -134,24 +129,26 @@ app.get("/", (req, res) => {
 });
 
 // Получение всех филиалов
-app.get("/api/branches", authenticateAdmin, async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM branches");
+app.get("/api/branches", authenticateAdmin, (req, res) => {
+  const sql = "SELECT * FROM branches";
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при получении филиалов:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении филиалов" });
+    }
     res.json(results);
-  } catch (err) {
-    console.error("Ошибка при получении филиалов:", err.message);
-    res.status(500).json({ error: "Ошибка при получении филиалов" });
-  }
+  });
 });
 
 // Добавление нового филиала
-app.post("/api/branches", authenticateAdmin, async (req, res) => {
+app.post("/api/branches", authenticateAdmin, (req, res) => {
   const { name, address, phone, latitude, longitude, status } = req.body;
 
   if (!name || !address) {
     return res.status(400).json({ error: "Название и адрес обязательны" });
   }
 
+  // Проверка широты и долготы
   if (latitude && (latitude < -90 || latitude > 90)) {
     return res.status(400).json({ error: "Широта должна быть в диапазоне от -90 до 90" });
   }
@@ -160,28 +157,31 @@ app.post("/api/branches", authenticateAdmin, async (req, res) => {
   }
 
   const normalizedStatus = status === "Активен" ? "active" : "inactive";
-  try {
-    const [result] = await db.promise().query(
-      "INSERT INTO branches (name, address, phone, latitude, longitude, status) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, address, phone || null, latitude || null, longitude || null, normalizedStatus]
-    );
-    res.status(201).json({
-      id: result.insertId,
-      name,
-      address,
-      phone,
-      latitude,
-      longitude,
-      status: normalizedStatus,
-    });
-  } catch (err) {
-    console.error("Ошибка при добавлении филиала:", err.message);
-    res.status(500).json({ error: "Ошибка при добавлении филиала" });
-  }
+  const sql =
+    "INSERT INTO branches (name, address, phone, latitude, longitude, status) VALUES (?, ?, ?, ?, ?, ?)";
+  db.query(
+    sql,
+    [name, address, phone || null, latitude || null, longitude || null, normalizedStatus],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при добавлении филиала:", err.message);
+        return res.status(500).json({ error: "Ошибка при добавлении филиала" });
+      }
+      res.status(201).json({
+        id: result.insertId,
+        name,
+        address,
+        phone,
+        latitude,
+        longitude,
+        status: normalizedStatus,
+      });
+    }
+  );
 });
 
 // Обновление филиала
-app.put("/api/branches/:id", authenticateAdmin, async (req, res) => {
+app.put("/api/branches/:id", authenticateAdmin, (req, res) => {
   const branchId = req.params.id;
   const { name, address, phone, latitude, longitude, status } = req.body;
 
@@ -189,6 +189,7 @@ app.put("/api/branches/:id", authenticateAdmin, async (req, res) => {
     return res.status(400).json({ error: "Название и адрес обязательны" });
   }
 
+  // Проверка широты и долготы
   if (latitude && (latitude < -90 || latitude > 90)) {
     return res.status(400).json({ error: "Широта должна быть в диапазоне от -90 до 90" });
   }
@@ -197,82 +198,85 @@ app.put("/api/branches/:id", authenticateAdmin, async (req, res) => {
   }
 
   const normalizedStatus = status === "Активен" ? "active" : "inactive";
-  try {
-    const [result] = await db.promise().query(
-      "UPDATE branches SET name = ?, address = ?, phone = ?, latitude = ?, longitude = ?, status = ? WHERE id = ?",
-      [name, address, phone || null, latitude || null, longitude || null, normalizedStatus, branchId]
-    );
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Филиал не найден" });
+  const sql =
+    "UPDATE branches SET name = ?, address = ?, phone = ?, latitude = ?, longitude = ?, status = ? WHERE id = ?";
+  db.query(
+    sql,
+    [name, address, phone || null, latitude || null, longitude || null, normalizedStatus, branchId],
+    (err, result) => {
+      if (err) {
+        console.error("Ошибка при обновлении филиала:", err.message);
+        return res.status(500).json({ error: "Ошибка при обновлении филиала" });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Филиал не найден" });
+      }
+      res.json({
+        id: branchId,
+        name,
+        address,
+        phone,
+        latitude,
+        longitude,
+        status: normalizedStatus,
+      });
     }
-    res.json({
-      id: branchId,
-      name,
-      address,
-      phone,
-      latitude,
-      longitude,
-      status: normalizedStatus,
-    });
-  } catch (err) {
-    console.error("Ошибка при обновлении филиала:", err.message);
-    res.status(500).json({ error: "Ошибка при обновлении филиала" });
-  }
+  );
 });
 
 // Удаление филиала
-app.delete("/api/branches/:id", authenticateAdmin, async (req, res) => {
+app.delete("/api/branches/:id", authenticateAdmin, (req, res) => {
   const branchId = req.params.id;
-  try {
-    const [result] = await db.promise().query("DELETE FROM branches WHERE id = ?", [branchId]);
+  const sql = "DELETE FROM branches WHERE id = ?";
+  db.query(sql, [branchId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении филиала:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении филиала" });
+    }
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Филиал не найден" });
     }
     res.json({ message: "Филиал успешно удалён" });
-  } catch (err) {
-    console.error("Ошибка при удалении филиала:", err.message);
-    res.status(500).json({ error: "Ошибка при удалении филиала" });
-  }
+  });
 });
 
 // Получение всех категорий
-app.get("/api/categories", authenticateAdmin, async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM categories ORDER BY priority ASC");
+app.get("/api/categories", authenticateAdmin, (req, res) => {
+  const sql = "SELECT * FROM categories ORDER BY priority ASC";
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Ошибка при получении категорий:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении категорий" });
+    }
     res.json(results);
-  } catch (err) {
-    console.error("Ошибка при получении категорий:", err.message);
-    res.status(500).json({ error: "Ошибка при получении категорий" });
-  }
+  });
 });
 
 // Добавление новой категории
-app.post("/api/categories", authenticateAdmin, async (req, res) => {
+app.post("/api/categories", authenticateAdmin, (req, res) => {
   const { name, emoji, priority } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: "Название обязательно" });
   }
 
-  try {
-    const [result] = await db.promise().query(
-      "INSERT INTO categories (name, emoji, priority) VALUES (?, ?, ?)",
-      [name, emoji || null, priority || 0]
-    );
+  const sql = "INSERT INTO categories (name, emoji, priority) VALUES (?, ?, ?)";
+  db.query(sql, [name, emoji || null, priority || 0], (err, result) => {
+    if (err) {
+      console.error("Ошибка при добавлении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при добавлении категории" });
+    }
     res.status(201).json({
       id: result.insertId,
       name,
       emoji,
       priority,
     });
-  } catch (err) {
-    console.error("Ошибка при добавлении категории:", err.message);
-    res.status(500).json({ error: "Ошибка при добавлении категории" });
-  }
+  });
 });
 
 // Обновление категории
-app.put("/api/categories/:id", authenticateAdmin, async (req, res) => {
+app.put("/api/categories/:id", authenticateAdmin, (req, res) => {
   const categoryId = req.params.id;
   const { name, emoji, priority } = req.body;
 
@@ -280,11 +284,12 @@ app.put("/api/categories/:id", authenticateAdmin, async (req, res) => {
     return res.status(400).json({ error: "Название обязательно" });
   }
 
-  try {
-    const [result] = await db.promise().query(
-      "UPDATE categories SET name = ?, emoji = ?, priority = ? WHERE id = ?",
-      [name, emoji || null, priority || 0, categoryId]
-    );
+  const sql = "UPDATE categories SET name = ?, emoji = ?, priority = ? WHERE id = ?";
+  db.query(sql, [name, emoji || null, priority || 0, categoryId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при обновлении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при обновлении категории" });
+    }
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Категория не найдена" });
     }
@@ -294,66 +299,62 @@ app.put("/api/categories/:id", authenticateAdmin, async (req, res) => {
       emoji,
       priority,
     });
-  } catch (err) {
-    console.error("Ошибка при обновлении категории:", err.message);
-    res.status(500).json({ error: "Ошибка при обновлении категории" });
-  }
+  });
 });
 
 // Удаление категории
-app.delete("/api/categories/:id", authenticateAdmin, async (req, res) => {
+app.delete("/api/categories/:id", authenticateAdmin, (req, res) => {
   const categoryId = req.params.id;
-  try {
-    const [result] = await db.promise().query("DELETE FROM categories WHERE id = ?", [categoryId]);
+  const sql = "DELETE FROM categories WHERE id = ?";
+  db.query(sql, [categoryId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении категории" });
+    }
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Категория не найдена" });
     }
     res.json({ message: "Категория успешно удалена" });
-  } catch (err) {
-    console.error("Ошибка при удалении категории:", err.message);
-    res.status(500).json({ error: "Ошибка при удалении категории" });
-  }
+  });
 });
 
 // Получение всех продуктов для конкретного филиала
-app.get("/api/branches/:branchId/products", authenticateAdmin, async (req, res) => {
+app.get("/api/branches/:branchId/products", authenticateAdmin, (req, res) => {
   const branchId = req.params.branchId;
-  try {
-    const [results] = await db.promise().query(
-      `
-      SELECT 
-        p.id,
-        p.name,
-        p.description,
-        p.category_id,
-        c.name as category,
-        p.sub_category,
-        p.image_url,
-        bp.price_small,
-        bp.price_medium,
-        bp.price_large,
-        bp.price,
-        bp.status
-      FROM 
-        products p
-      JOIN 
-        categories c ON p.category_id = c.id
-      JOIN 
-        branch_products bp ON p.id = bp.product_id
-      WHERE 
-        bp.branch_id = ?
-      `,
-      [branchId]
-    );
+  const sql = `
+    SELECT 
+      p.id,
+      p.name,
+      p.description,
+      p.category_id,
+      c.name as category,
+      p.sub_category,
+      p.image_url,
+      bp.price_small,
+      bp.price_medium,
+      bp.price_large,
+      bp.price,
+      bp.status
+    FROM 
+      products p
+    JOIN 
+      categories c ON p.category_id = c.id
+    JOIN 
+      branch_products bp ON p.id = bp.product_id
+    WHERE 
+      bp.branch_id = ?
+  `;
+  db.query(sql, [branchId], (err, results) => {
+    if (err) {
+      console.error("Ошибка при запросе данных:", err.message);
+      return res.status(500).json({ error: "Ошибка при получении продуктов" });
+    }
     res.json(results);
-  } catch (err) {
-    console.error("Ошибка при запросе данных:", err.message);
-    res.status(500).json({ error: "Ошибка при получении продуктов" });
-  }
+  });
 });
 
 // Добавление нового продукта для филиала
-app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("image"), async (req, res) => {
+app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("image"), (req, res) => {
   const branchId = req.params.branchId;
   const {
     name,
@@ -376,40 +377,59 @@ app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("i
       .json({ error: "Изображение обязательно для нового продукта" });
   }
 
-  try {
-    const [categoryResult] = await db.promise().query("SELECT id FROM categories WHERE name = ?", [category]);
+  // Находим category_id по имени категории
+  const categorySql = "SELECT id FROM categories WHERE name = ?";
+  db.query(categorySql, [category], (err, categoryResult) => {
+    if (err) {
+      console.error("Ошибка при поиске категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при поиске категории" });
+    }
     if (categoryResult.length === 0) {
       return res.status(400).json({ error: "Категория не найдена" });
     }
     const categoryId = categoryResult[0].id;
 
-    const [productResult] = await db.promise().query(
-      "INSERT INTO products (name, description, category_id, sub_category, image_url) VALUES (?, ?, ?, ?, ?)",
-      [name, description || null, categoryId, subCategory || null, imageUrl]
-    );
-    const productId = productResult.insertId;
+    // Добавление нового продукта
+    const productSql =
+      "INSERT INTO products (name, description, category_id, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
+    db.query(
+      productSql,
+      [name, description || null, categoryId, subCategory || null, imageUrl],
+      (err, result) => {
+        if (err) {
+          console.error("Ошибка при добавлении продукта:", err.message);
+          return res.status(500).json({ error: "Ошибка при добавлении продукта" });
+        }
+        const productId = result.insertId;
 
-    await db.promise().query(
-      "INSERT INTO branch_products (branch_id, product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        branchId,
-        productId,
-        priceSmall || null,
-        priceMedium || null,
-        priceLarge || null,
-        price || null,
-      ]
+        // Добавление связи с филиалом и цен
+        const branchProductSql =
+          "INSERT INTO branch_products (branch_id, product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?, ?)";
+        db.query(
+          branchProductSql,
+          [
+            branchId,
+            productId,
+            priceSmall || null,
+            priceMedium || null,
+            priceLarge || null,
+            price || null,
+          ],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при добавлении цен:", err.message);
+              return res.status(500).json({ error: "Ошибка при добавлении цен" });
+            }
+            res.status(201).json({ message: "Продукт успешно добавлен", productId });
+          }
+        );
+      }
     );
-
-    res.status(201).json({ message: "Продукт успешно добавлен", productId });
-  } catch (err) {
-    console.error("Ошибка при добавлении продукта:", err.message);
-    res.status(500).json({ error: "Ошибка при добавлении продукта" });
-  }
+  });
 });
 
 // Обновление продукта для филиала
-app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single("image"), async (req, res) => {
+app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single("image"), (req, res) => {
   const branchId = req.params.branchId;
   const productId = req.params.id;
   const {
@@ -428,62 +448,95 @@ app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single
     return res.status(400).json({ error: "Поля name и category обязательны" });
   }
 
-  try {
-    const [categoryResult] = await db.promise().query("SELECT id FROM categories WHERE name = ?", [category]);
+  // Находим category_id по имени категории
+  const categorySql = "SELECT id FROM categories WHERE name = ?";
+  db.query(categorySql, [category], (err, categoryResult) => {
+    if (err) {
+      console.error("Ошибка при поиске категории:", err.message);
+      return res.status(500).json({ error: "Ошибка при поиске категории" });
+    }
     if (categoryResult.length === 0) {
       return res.status(400).json({ error: "Категория не найдена" });
     }
     const categoryId = categoryResult[0].id;
 
-    const [productResult] = await db.promise().query(
-      `
+    // Обновление данных продукта
+    const updateProductQuery = `
       UPDATE products 
       SET name = ?, description = ?, category_id = ?, sub_category = ?, image_url = COALESCE(?, image_url)
       WHERE id = ?
-      `,
-      [name, description || null, categoryId, subCategory || null, imageUrl, productId]
-    );
-    if (productResult.affectedRows === 0) {
-      return res.status(404).json({ error: "Продукт не найден" });
-    }
+    `;
+    db.query(
+      updateProductQuery,
+      [name, description || null, categoryId, subCategory || null, imageUrl, productId],
+      (err, result) => {
+        if (err) {
+          console.error("Ошибка при обновлении продукта:", err.message);
+          return res.status(500).json({ error: "Ошибка при обновлении продукта" });
+        }
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ error: "Продукт не найден" });
+        }
 
-    await db.promise().query(
-      `
-      UPDATE branch_products 
-      SET price_small = ?, price_medium = ?, price_large = ?, price = ?
-      WHERE branch_id = ? AND product_id = ?
-      `,
-      [priceSmall || null, priceMedium || null, priceLarge || null, price || null, branchId, productId]
+        // Обновление цен в branch_products
+        const updatePriceQuery = `
+          UPDATE branch_products 
+          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
+          WHERE branch_id = ? AND product_id = ?
+        `;
+        db.query(
+          updatePriceQuery,
+          [priceSmall || null, priceMedium || null, priceLarge || null, price || null, branchId, productId],
+          (err) => {
+            if (err) {
+              console.error("Ошибка при обновлении цен:", err.message);
+              return res.status(500).json({ error: "Ошибка при обновлении цен" });
+            }
+            res.status(200).json({ message: "Продукт успешно обновлен" });
+          }
+        );
+      }
     );
-
-    res.status(200).json({ message: "Продукт успешно обновлен" });
-  } catch (err) {
-    console.error("Ошибка при обновлении продукта:", err.message);
-    res.status(500).json({ error: "Ошибка при обновлении продукта" });
-  }
+  });
 });
 
 // Удаление продукта из филиала
-app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, async (req, res) => {
+app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, (req, res) => {
   const branchId = req.params.branchId;
   const productId = req.params.id;
 
-  try {
-    await db.promise().query("DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?", [branchId, productId]);
-
-    const [countResult] = await db.promise().query("SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?", [productId]);
-    const count = countResult[0].count;
-
-    if (count === 0) {
-      await db.promise().query("DELETE FROM products WHERE id = ?", [productId]);
-      res.json({ message: "Продукт успешно удалён" });
-    } else {
-      res.json({ message: "Продукт удалён из филиала" });
+  // Удаляем связь с филиалом
+  const deleteBranchProductSql = "DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?";
+  db.query(deleteBranchProductSql, [branchId, productId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении связи с филиалом:", err.message);
+      return res.status(500).json({ error: "Ошибка при удалении связи с филиалом" });
     }
-  } catch (err) {
-    console.error("Ошибка при удалении продукта:", err.message);
-    res.status(500).json({ error: "Ошибка при удалении продукта" });
-  }
+
+    // Проверяем, есть ли продукт в других филиалах
+    const checkOtherBranchesSql = "SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?";
+    db.query(checkOtherBranchesSql, [productId], (err, countResult) => {
+      if (err) {
+        console.error("Ошибка при проверке других филиалов:", err.message);
+        return res.status(500).json({ error: "Ошибка при проверке других филиалов" });
+      }
+
+      const count = countResult[0].count;
+      if (count === 0) {
+        // Если продукт больше нигде не используется, удаляем его из products
+        const deleteProductSql = "DELETE FROM products WHERE id = ?";
+        db.query(deleteProductSql, [productId], (err) => {
+          if (err) {
+            console.error("Ошибка при удалении продукта:", err.message);
+            return res.status(500).json({ error: "Ошибка при удалении продукта" });
+          }
+          res.json({ message: "Продукт успешно удалён" });
+        });
+      } else {
+        res.json({ message: "Продукт удалён из филиала" });
+      }
+    });
+  });
 });
 
 // Вход администратора
@@ -495,23 +548,32 @@ app.post("/api/admin-login", async (req, res) => {
       .json({ message: "Необходимо указать имя пользователя и пароль" });
   }
 
-  try {
-    const [results] = await db.promise().query("SELECT * FROM users WHERE username = ?", [username]);
+  const sql = "SELECT * FROM users WHERE username = ?";
+  db.query(sql, [username], async (err, results) => {
+    if (err) {
+      console.error("Ошибка базы данных:", err);
+      return res.status(500).json({ message: "Ошибка базы данных" });
+    }
     if (results.length === 0) {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const [result] = await db.promise().query(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
-        [username, hashedPassword]
-      );
-      const token = jwt.sign({ userId: result.insertId, username }, JWT_SECRET, {
-        expiresIn: "1h",
-      });
-      res.status(201).json({
-        message: "Новый администратор создан",
-        token,
-        userId: result.insertId,
-        username,
-        generatedPassword: password,
+      const insertSql = "INSERT INTO users (username, password) VALUES (?, ?)";
+      db.query(insertSql, [username, hashedPassword], (err, result) => {
+        if (err) {
+          console.error("Ошибка создания администратора:", err);
+          return res
+            .status(500)
+            .json({ message: "Ошибка создания администратора" });
+        }
+        const token = jwt.sign({ userId: result.insertId, username }, JWT_SECRET, {
+          expiresIn: "1h",
+        });
+        res.status(201).json({
+          message: "Новый администратор создан",
+          token,
+          userId: result.insertId,
+          username,
+          generatedPassword: password,
+        });
       });
     } else {
       const admin = results[0];
@@ -524,10 +586,7 @@ app.post("/api/admin-login", async (req, res) => {
       });
       res.json({ message: "Вход выполнен успешно", token, userId: admin.id, username });
     }
-  } catch (err) {
-    console.error("Ошибка базы данных:", err);
-    res.status(500).json({ message: "Ошибка базы данных" });
-  }
+  });
 });
 
 // Отправка заказа в Telegram
@@ -580,7 +639,7 @@ app.post("/api/register", async (req, res) => {
   }
 
   try {
-    const [existingUser] = await db.promise().query("SELECT * FROM userskg WHERE email = ? OR phone = ?", [
+    const [existingUser] = await query("SELECT * FROM userskg WHERE email = ? OR phone = ?", [
       email,
       phone,
     ]);
@@ -593,7 +652,7 @@ app.post("/api/register", async (req, res) => {
     const confirmationCode = Math.floor(100000 + Math.random() * 900000);
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await db.promise().query(
+    await query(
       "INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)",
       [firstName, lastName, phone, email, hashedPassword, confirmationCode]
     );
@@ -627,22 +686,21 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/confirm-code", async (req, res) => {
   const { code } = req.body;
   try {
-    const [tempUser] = await db.promise().query("SELECT * FROM temp_users WHERE confirmation_code = ?", [
+    const [tempUser] = await query("SELECT * FROM temp_users WHERE confirmation_code = ?", [
       code,
     ]);
     if (!tempUser) {
       return res.status(400).json({ message: "Неверный код подтверждения" });
     }
 
-    const [result] = await db.promise().query(
+    const userId = await query(
       "INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
       [tempUser.first_name, tempUser.last_name, tempUser.phone, tempUser.email, tempUser.password_hash]
-    );
-    const userId = result.insertId;
+    ).then((result) => result.insertId);
 
-    await db.promise().query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
+    await query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
     const token = jwt.sign({ user_id: userId }, JWT_SECRET, { expiresIn: "24h" });
-    await db.promise().query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
+    await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
 
     res.status(200).json({ message: "Подтверждение успешно", token });
   } catch (error) {
@@ -659,7 +717,7 @@ app.post("/api/login", async (req, res) => {
   }
 
   try {
-    const [user] = await db.promise().query("SELECT * FROM userskg WHERE email = ?", [email]);
+    const [user] = await query("SELECT * FROM userskg WHERE email = ?", [email]);
     if (!user) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
@@ -670,7 +728,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = jwt.sign({ user_id: user.user_id }, JWT_SECRET, { expiresIn: "1h" });
-    await db.promise().query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user.user_id]);
+    await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user.user_id]);
     res.json({ message: "Вход успешен", token });
   } catch (error) {
     console.error("Ошибка входа:", error);
@@ -679,56 +737,60 @@ app.post("/api/login", async (req, res) => {
 });
 
 // Получение информации о пользователе
-app.get("/api/user", async (req, res) => {
+app.get("/api/user", (req, res) => {
   const token = req.headers["authorization"]?.split(" ")[1];
   if (!token) {
     return res.status(401).json({ message: "Требуется токен" });
   }
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const [results] = await db.promise().query(
-      "SELECT user_id, first_name AS username, email, phone, balance FROM userskg WHERE user_id = ?",
-      [decoded.user_id]
-    );
-    if (results.length === 0) {
-      return res.status(404).json({ message: "Пользователь не найден" });
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Неверный токен" });
     }
-    res.json(results[0]);
-  } catch (error) {
-    console.error("Ошибка запроса:", error);
-    res.status(500).json({ message: "Ошибка сервера" });
-  }
+    const sql = "SELECT user_id, first_name AS username, email, phone, balance FROM userskg WHERE user_id = ?";
+    db.query(sql, [decoded.user_id], (error, results) => {
+      if (error) {
+        console.error("Ошибка запроса:", error);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
+      if (results.length === 0) {
+        return res.status(404).json({ message: "Пользователь не найден" });
+      }
+      res.json(results[0]);
+    });
+  });
 });
 
 // Получение всех пользователей
-app.get("/api/users", authenticateAdmin, async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM userskg");
+app.get("/api/users", authenticateAdmin, (req, res) => {
+  const query = "SELECT * FROM userskg";
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error("Ошибка при запросе пользователей:", err);
+      return res.status(500).json({ message: "Ошибка сервера" });
+    }
     res.json(results);
-  } catch (err) {
-    console.error("Ошибка при запросе пользователей:", err);
-    res.status(500).json({ message: "Ошибка сервера" });
-  }
+  });
 });
 
 // Удаление пользователя
-app.delete("/api/users/:user_id", authenticateAdmin, async (req, res) => {
+app.delete("/api/users/:user_id", authenticateAdmin, (req, res) => {
   const userId = parseInt(req.params.user_id);
   if (isNaN(userId)) {
     return res.status(400).json({ message: "Неверный ID пользователя" });
   }
 
-  try {
-    const [result] = await db.promise().query("DELETE FROM userskg WHERE user_id = ?", [userId]);
+  const sql = "DELETE FROM userskg WHERE user_id = ?";
+  db.query(sql, [userId], (err, result) => {
+    if (err) {
+      console.error("Ошибка при удалении пользователя:", err);
+      return res.status(500).json({ message: "Ошибка сервера" });
+    }
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
     res.json({ message: "Пользователь успешно удален" });
-  } catch (err) {
-    console.error("Ошибка при удалении пользователя:", err);
-    res.status(500).json({ message: "Ошибка сервера" });
-  }
+  });
 });
 
 // Генерация промокода
@@ -749,14 +811,14 @@ app.post("/api/users/:user_id/promo", authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const [user] = await db.promise().query("SELECT email FROM userskg WHERE user_id = ?", [userId]);
+    const [user] = await query("SELECT email FROM userskg WHERE user_id = ?", [userId]);
     if (!user) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
 
     const promoCode = generatePromoCode();
     const now = new Date();
-    await db.promise().query(
+    await query(
       "UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?",
       [promoCode, now, discount, userId]
     );
@@ -788,14 +850,18 @@ app.post("/api/users/:user_id/promo", authenticateAdmin, async (req, res) => {
 });
 
 // Проверка промокода
-app.post("/api/validate-promo", async (req, res) => {
+app.post("/api/validate-promo", (req, res) => {
   const { promoCode } = req.body;
   if (!promoCode) {
     return res.status(400).json({ message: "Промокод не указан" });
   }
 
-  try {
-    const [results] = await db.promise().query("SELECT * FROM userskg WHERE promo_code = ?", [promoCode]);
+  const query = "SELECT * FROM userskg WHERE promo_code = ?";
+  db.query(query, [promoCode], (err, results) => {
+    if (err) {
+      console.error("Ошибка при проверке промокода:", err);
+      return res.status(500).json({ message: "Ошибка сервера" });
+    }
     if (results.length === 0) {
       return res.status(400).json({ message: "Неверный промокод" });
     }
@@ -808,11 +874,18 @@ app.post("/api/validate-promo", async (req, res) => {
     }
 
     res.json({ discount });
-  } catch (err) {
-    console.error("Ошибка при проверке промокода:", err);
-    res.status(500).json({ message: "Ошибка сервера" });
-  }
+  });
 });
+
+// Вспомогательная функция для асинхронных запросов
+function query(sql, params) {
+  return new Promise((resolve, reject) => {
+    db.query(sql, params, (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
+    });
+  });
+}
 
 // Запуск сервера
 app.listen(5000, () => {
