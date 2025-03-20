@@ -29,7 +29,12 @@ app.use(
 );
 
 app.use(bodyParser.json());
-
+// Временный код для генерации хэша пароля
+(async () => {
+  const newPassword = "admin12345";
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  console.log(`Новый пароль: ${newPassword}, Хэш: ${hashedPassword}`);
+})();
 // Настройка Multer для загрузки файлов
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
