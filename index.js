@@ -11,7 +11,6 @@ const crypto = require("crypto");
 const cors = require("cors");
 require("dotenv").config();
 const nodemailer = require("nodemailer");
-const SFTPClient = require("ssh2-sftp-client");
 
 const app = express();
 
@@ -56,7 +55,7 @@ const db = mysql.createConnection({
 db.connect((err) => {
   if (err) {
     console.error("Ошибка подключения к базе данных:", err.message);
-    process.exit(1); // Завершаем процесс, если база недоступна
+    process.exit(1);
   }
   console.log("Подключено к базе данных MySQL");
 
@@ -115,6 +114,7 @@ app.get("/api/products", (req, res) => {
       products.name,
       products.description,
       products.category,
+      products.sub_category,
       products.image_url,
       prices.price_small,
       prices.price_medium,
@@ -133,7 +133,8 @@ app.get("/api/products", (req, res) => {
     res.json(results);
   });
 });
-// Добавление/обновление продукта (оставляем POST для создания нового продукта)
+
+// Добавление нового продукта
 app.post("/api/products", upload.single("image"), (req, res) => {
   const {
     name,
@@ -156,6 +157,9 @@ app.post("/api/products", upload.single("image"), (req, res) => {
       .json({ error: "Изображение обязательно для нового продукта" });
   }
 
+  // Определяем, является ли продукт пиццей
+  const isPizza = category === "Пиццы" || subCategory === "Пиццы";
+
   // Добавление нового продукта
   const productSql =
     "INSERT INTO products (name, description, category, sub_category, image_url) VALUES (?, ?, ?, ?, ?)";
@@ -168,11 +172,19 @@ app.post("/api/products", upload.single("image"), (req, res) => {
         return res.status(500).json({ error: "Ошибка при добавлении продукта" });
       }
       const productId = result.insertId;
+
+      // Вставка цен в зависимости от типа продукта
       const priceSql =
-        "INSERT INTO prices (product_id, price_small, price, price_medium, price_large) VALUES (?, ?, ?, ?, ?)";
+        "INSERT INTO prices (product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?)";
       db.query(
         priceSql,
-        [productId, priceSmall || null, price || null, priceMedium || null, priceLarge || null],
+        [
+          productId,
+          isPizza ? (priceSmall || null) : null,
+          isPizza ? (priceMedium || null) : null,
+          isPizza ? (priceLarge || null) : null,
+          isPizza ? null : (price || null),
+        ],
         (err) => {
           if (err) {
             console.error("Ошибка при добавлении цен:", err);
@@ -185,7 +197,7 @@ app.post("/api/products", upload.single("image"), (req, res) => {
   );
 });
 
-// Обновление продукта (новый маршрут PUT)
+// Обновление продукта
 app.put("/api/products/:id", upload.single("image"), (req, res) => {
   const productId = req.params.id;
   const {
@@ -203,6 +215,9 @@ app.put("/api/products/:id", upload.single("image"), (req, res) => {
   if (!name || !category) {
     return res.status(400).json({ error: "Поля name и category обязательны" });
   }
+
+  // Определяем, является ли продукт пиццей
+  const isPizza = category === "Пиццы" || subCategory === "Пиццы";
 
   // Обновление данных продукта
   const updateProductQuery = `
@@ -222,36 +237,67 @@ app.put("/api/products/:id", upload.single("image"), (req, res) => {
         return res.status(404).json({ error: "Продукт не найден" });
       }
 
-      // Обновление цен (если они переданы)
-      if (price || priceSmall || priceMedium || priceLarge) {
-        const updatePriceQuery = `
-          UPDATE prices 
-          SET price_small = ?, price_medium = ?, price_large = ?, price = ?
-          WHERE product_id = ?
-        `;
-        db.query(
-          updatePriceQuery,
-          [
-            priceSmall || null,
-            priceMedium || null,
-            priceLarge || null,
-            price || null,
-            productId,
-          ],
-          (err) => {
-            if (err) {
-              console.error("Ошибка при обновлении цен:", err);
-              return res.status(500).json({ error: "Ошибка при обновлении цен" });
+      // Проверяем, есть ли запись в таблице prices
+      const checkPriceQuery = "SELECT * FROM prices WHERE product_id = ?";
+      db.query(checkPriceQuery, [productId], (err, priceRows) => {
+        if (err) {
+          console.error("Ошибка при проверке цен:", err);
+          return res.status(500).json({ error: "Ошибка при проверке цен" });
+        }
+
+        if (priceRows.length > 0) {
+          // Обновляем существующую запись
+          const updatePriceQuery = `
+            UPDATE prices 
+            SET price_small = ?, price_medium = ?, price_large = ?, price = ?
+            WHERE product_id = ?
+          `;
+          db.query(
+            updatePriceQuery,
+            [
+              isPizza ? (priceSmall || null) : null,
+              isPizza ? (priceMedium || null) : null,
+              isPizza ? (priceLarge || null) : null,
+              isPizza ? null : (price || null),
+              productId,
+            ],
+            (err) => {
+              if (err) {
+                console.error("Ошибка при обновлении цен:", err);
+                return res.status(500).json({ error: "Ошибка при обновлении цен" });
+              }
+              res.status(200).json({ message: "Продукт успешно обновлен" });
             }
-            res.status(200).json({ message: "Продукт успешно обновлен" });
-          }
-        );
-      } else {
-        res.status(200).json({ message: "Продукт успешно обновлен" });
-      }
+          );
+        } else {
+          // Вставляем новую запись
+          const insertPriceQuery = `
+            INSERT INTO prices (product_id, price_small, price_medium, price_large, price) 
+            VALUES (?, ?, ?, ?, ?)
+          `;
+          db.query(
+            insertPriceQuery,
+            [
+              productId,
+              isPizza ? (priceSmall || null) : null,
+              isPizza ? (priceMedium || null) : null,
+              isPizza ? (priceLarge || null) : null,
+              isPizza ? null : (price || null),
+            ],
+            (err) => {
+              if (err) {
+                console.error("Ошибка при добавлении цен:", err);
+                return res.status(500).json({ error: "Ошибка при добавлении цен" });
+              }
+              res.status(200).json({ message: "Продукт успешно обновлен" });
+            }
+          );
+        }
+      });
     }
   );
 });
+
 // Удаление продукта
 app.delete("/api/products/:id", (req, res) => {
   const productId = req.params.id;
@@ -457,7 +503,7 @@ app.post("/api/login", async (req, res) => {
     await query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user.user_id]);
     res.json({ message: "Вход успешен", token });
   } catch (error) {
-    console.error("Ошибка входе:", error);
+    console.error("Ошибка входа:", error);
     res.status(500).json({ message: "Ошибка сервера" });
   }
 });
