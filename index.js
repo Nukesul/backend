@@ -106,6 +106,38 @@ db.getConnection((err, connection) => {
   });
 });
 
+
+
+
+
+
+
+// Публичный маршрут для получения всех филиалов
+app.get("/api/public/branches", async (req, res) => {
+  try {
+    const [results] = await db.promise().query("SELECT * FROM branches WHERE status = 'active'");
+    res.json(results);
+  } catch (err) {
+    console.error("Ошибка при получении филиалов (публичный маршрут):", err.message);
+    res.status(500).json({ error: "Ошибка при получении филиалов" });
+  }
+});
+
+// Оставляем существующий маршрут для админки
+app.get("/api/branches", authenticateAdmin, async (req, res) => {
+  try {
+    const [results] = await db.promise().query("SELECT * FROM branches");
+    res.json(results);
+  } catch (err) {
+    console.error("Ошибка при получении филиалов:", err.message);
+    res.status(500).json({ error: "Ошибка при получении филиалов" });
+  }
+});
+
+
+
+
+
 // Middleware для проверки администратора
 const authenticateAdmin = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1];
@@ -133,16 +165,7 @@ app.get("/", (req, res) => {
   res.send("Сервер работает!");
 });
 
-// Получение всех филиалов
-app.get("/api/branches", authenticateAdmin, async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM branches");
-    res.json(results);
-  } catch (err) {
-    console.error("Ошибка при получении филиалов:", err.message);
-    res.status(500).json({ error: "Ошибка при получении филиалов" });
-  }
-});
+
 
 // Добавление нового филиала
 app.post("/api/branches", authenticateAdmin, async (req, res) => {
@@ -314,8 +337,44 @@ app.delete("/api/categories/:id", authenticateAdmin, async (req, res) => {
     res.status(500).json({ error: "Ошибка при удалении категории" });
   }
 });
+// Публичный маршрут для получения продуктов филиала
+app.get("/api/public/branches/:branchId/products", async (req, res) => {
+  const branchId = req.params.branchId;
+  try {
+    const [results] = await db.promise().query(
+      `
+      SELECT 
+        p.id,
+        p.name,
+        p.description,
+        p.category_id,
+        c.name as category,
+        p.sub_category,
+        p.image_url,
+        bp.price_small,
+        bp.price_medium,
+        bp.price_large,
+        bp.price,
+        bp.status
+      FROM 
+        products p
+      JOIN 
+        categories c ON p.category_id = c.id
+      JOIN 
+        branch_products bp ON p.id = bp.product_id
+      WHERE 
+        bp.branch_id = ? AND bp.status = 'active'
+      `,
+      [branchId]
+    );
+    res.json(results);
+  } catch (err) {
+    console.error("Ошибка при запросе данных (публичный маршрут):", err.message);
+    res.status(500).json({ error: "Ошибка при получении продуктов" });
+  }
+});
 
-// Получение всех продуктов для конкретного филиала
+// Оставляем существующий маршрут для админки
 app.get("/api/branches/:branchId/products", authenticateAdmin, async (req, res) => {
   const branchId = req.params.branchId;
   try {
