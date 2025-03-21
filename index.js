@@ -106,38 +106,6 @@ db.getConnection((err, connection) => {
   });
 });
 
-
-
-
-
-
-
-// Публичный маршрут для получения всех филиалов
-app.get("/api/public/branches", async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM branches WHERE status = 'active'");
-    res.json(results);
-  } catch (err) {
-    console.error("Ошибка при получении филиалов (публичный маршрут):", err.message);
-    res.status(500).json({ error: "Ошибка при получении филиалов" });
-  }
-});
-
-// Оставляем существующий маршрут для админки
-app.get("/api/branches", authenticateAdmin, async (req, res) => {
-  try {
-    const [results] = await db.promise().query("SELECT * FROM branches");
-    res.json(results);
-  } catch (err) {
-    console.error("Ошибка при получении филиалов:", err.message);
-    res.status(500).json({ error: "Ошибка при получении филиалов" });
-  }
-});
-
-
-
-
-
 // Middleware для проверки администратора
 const authenticateAdmin = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1];
@@ -165,7 +133,16 @@ app.get("/", (req, res) => {
   res.send("Сервер работает!");
 });
 
-
+// Получение всех филиалов
+app.get("/api/branches", authenticateAdmin, async (req, res) => {
+  try {
+    const [results] = await db.promise().query("SELECT * FROM branches");
+    res.json(results);
+  } catch (err) {
+    console.error("Ошибка при получении филиалов:", err.message);
+    res.status(500).json({ error: "Ошибка при получении филиалов" });
+  }
+});
 
 // Добавление нового филиала
 app.post("/api/branches", authenticateAdmin, async (req, res) => {
