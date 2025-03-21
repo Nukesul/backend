@@ -1,5 +1,5 @@
 const express = require("express");
-const mysql = require("mysql2");
+const mysql = require("mysql2/promise"); // Используем промисы для упрощения
 const multer = require("multer");
 const path = require("path");
 const axios = require("axios");
@@ -14,15 +14,16 @@ const nodemailer = require("nodemailer");
 
 const app = express();
 
-// Переменные окружения для Telegram и JWT
+// Переменные окружения
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const JWT_SECRET = process.env.JWT_SECRET || "your_default_secret_key";
+const PORT = process.env.PORT || 5000; // Динамический порт
 
 // CORS настройки
 app.use(
   cors({
-    origin: "https://boodaikg.com",
+    origin: ["https://boodaikg.com", "http://localhost:3000"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
@@ -38,7 +39,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Создание папки uploads, если она не существует
+// Создание папки uploads
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
@@ -55,32 +56,22 @@ const db = mysql.createPool({
   connectTimeout: 30000,
 });
 
-// Проверяем подключение
-db.getConnection((err, connection) => {
-  if (err) {
-    console.error("Ошибка подключения к базе данных:", err.message);
-    process.exit(1);
-  }
-  console.log("Подключено к базе данных MySQL");
-  connection.release();
+// Проверка подключения и создание администратора
+async function initializeDatabase() {
+  try {
+    const connection = await db.getConnection();
+    console.log("Подключено к базе данных MySQL");
+    connection.release();
 
-  // Проверка наличия администратора
-  const checkAdminQuery = 'SELECT * FROM users WHERE role = "admin"';
-  db.query(checkAdminQuery, async (error, results) => {
-    if (error) {
-      console.error("Ошибка проверки администратора:", error);
-      return;
-    }
+    const [results] = await db.query('SELECT * FROM users WHERE role = "admin"');
     if (results.length === 0) {
       const generatedUsername = "admin";
       const generatedPassword = crypto.randomBytes(8).toString("hex");
       const hashedPassword = await bcrypt.hash(generatedPassword, 10);
       const generatedToken = crypto.randomBytes(32).toString("hex");
 
-      const insertAdminQuery =
-        'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)';
-      db.query(
-        insertAdminQuery,
+      await db.query(
+        'INSERT INTO users (username, email, password, role, token, phone, country, gender) VALUES (?, ?, ?, "admin", ?, ?, ?, ?)',
         [
           generatedUsername,
           "admin@example.com",
@@ -89,33 +80,31 @@ db.getConnection((err, connection) => {
           "1234567890",
           "DefaultCountry",
           "male",
-        ],
-        (error) => {
-          if (error) {
-            console.error("Ошибка при создании администратора:", error);
-          } else {
-            console.log(
-              `Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`
-            );
-          }
-        }
+        ]
+      );
+      console.log(
+        `Администратор создан! Логин: ${generatedUsername}, Пароль: ${generatedPassword}`
       );
     } else {
       console.log("Администратор уже существует");
     }
-  });
+  } catch (err) {
+    console.error("Ошибка при инициализации базы данных:", err.message);
+  }
+}
+
+// Вызываем инициализацию
+initializeDatabase();
+
+// Базовый маршрут
+app.get("/", (req, res) => {
+  res.send("Сервер работает!");
 });
-
-
-
-
-
-
 
 // Публичный маршрут для получения всех филиалов
 app.get("/api/public/branches", async (req, res) => {
   try {
-    const [results] = await db.promise().query("SELECT * FROM branches WHERE status = 'active'");
+    const [results] = await db.query("SELECT * FROM branches WHERE status = 'active'");
     res.json(results);
   } catch (err) {
     console.error("Ошибка при получении филиалов (публичный маршрут):", err.message);
@@ -123,34 +112,51 @@ app.get("/api/public/branches", async (req, res) => {
   }
 });
 
-// Оставляем существующий маршрут для админки
-app.get("/api/branches", authenticateAdmin, async (req, res) => {
+// Публичный маршрут для продуктов филиала
+app.get("/api/public/branches/:branchId/products", async (req, res) => {
+  const branchId = req.params.branchId;
   try {
-    const [results] = await db.promise().query("SELECT * FROM branches");
+    const [results] = await db.query(
+      `
+      SELECT 
+        p.id,
+        p.name,
+        p.description,
+        p.category_id,
+        c.name as category,
+        p.sub_category,
+        p.image_url,
+        bp.price_small,
+        bp.price_medium,
+        bp.price_large,
+        bp.price,
+        bp.status
+      FROM 
+        products p
+      JOIN 
+        categories c ON p.category_id = c.id
+      JOIN 
+        branch_products bp ON p.id = bp.product_id
+      WHERE 
+        bp.branch_id = ? AND bp.status = 'active'
+      `,
+      [branchId]
+    );
     res.json(results);
   } catch (err) {
-    console.error("Ошибка при получении филиалов:", err.message);
-    res.status(500).json({ error: "Ошибка при получении филиалов" });
+    console.error("Ошибка при получении продуктов (публичный маршрут):", err.message);
+    res.status(500).json({ error: "Ошибка при получении продуктов" });
   }
 });
-
-
-
-
 
 // Middleware для проверки администратора
 const authenticateAdmin = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1];
-  if (!token) {
-    return res.status(401).json({ message: "Требуется токен" });
-  }
+  if (!token) return res.status(401).json({ message: "Требуется токен" });
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: "Неверный токен" });
-    }
-    const sql = "SELECT role FROM users WHERE id = ?";
-    db.query(sql, [decoded.userId], (error, results) => {
+    if (err) return res.status(403).json({ message: "Неверный токен" });
+    db.query("SELECT role FROM users WHERE id = ?", [decoded.userId], (error, results) => {
       if (error || results.length === 0 || results[0].role !== "admin") {
         return res.status(403).json({ message: "Доступ запрещён" });
       }
@@ -160,12 +166,16 @@ const authenticateAdmin = (req, res, next) => {
   });
 };
 
-// Базовый маршрут
-app.get("/", (req, res) => {
-  res.send("Сервер работает!");
+// Маршрут для админки - все филиалы
+app.get("/api/branches", authenticateAdmin, async (req, res) => {
+  try {
+    const [results] = await db.query("SELECT * FROM branches");
+    res.json(results);
+  } catch (err) {
+    console.error("Ошибка при получении филиалов:", err.message);
+    res.status(500).json({ error: "Ошибка при получении филиалов" });
+  }
 });
-
-
 
 // Добавление нового филиала
 app.post("/api/branches", authenticateAdmin, async (req, res) => {
@@ -184,7 +194,7 @@ app.post("/api/branches", authenticateAdmin, async (req, res) => {
 
   const normalizedStatus = status === "active" ? "active" : "inactive";
   try {
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       "INSERT INTO branches (name, address, phone, latitude, longitude, status) VALUES (?, ?, ?, ?, ?, ?)",
       [name, address, phone || null, latitude || null, longitude || null, normalizedStatus]
     );
@@ -221,7 +231,7 @@ app.put("/api/branches/:id", authenticateAdmin, async (req, res) => {
 
   const normalizedStatus = status === "active" ? "active" : "inactive";
   try {
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       "UPDATE branches SET name = ?, address = ?, phone = ?, latitude = ?, longitude = ?, status = ? WHERE id = ?",
       [name, address, phone || null, latitude || null, longitude || null, normalizedStatus, branchId]
     );
@@ -247,7 +257,7 @@ app.put("/api/branches/:id", authenticateAdmin, async (req, res) => {
 app.delete("/api/branches/:id", authenticateAdmin, async (req, res) => {
   const branchId = req.params.id;
   try {
-    const [result] = await db.promise().query("DELETE FROM branches WHERE id = ?", [branchId]);
+    const [result] = await db.query("DELETE FROM branches WHERE id = ?", [branchId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Филиал не найден" });
     }
@@ -261,7 +271,7 @@ app.delete("/api/branches/:id", authenticateAdmin, async (req, res) => {
 // Получение всех категорий
 app.get("/api/categories", authenticateAdmin, async (req, res) => {
   try {
-    const [results] = await db.promise().query("SELECT * FROM categories ORDER BY priority ASC");
+    const [results] = await db.query("SELECT * FROM categories ORDER BY priority ASC");
     res.json(results);
   } catch (err) {
     console.error("Ошибка при получении категорий:", err.message);
@@ -278,7 +288,7 @@ app.post("/api/categories", authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       "INSERT INTO categories (name, emoji, priority) VALUES (?, ?, ?)",
       [name, emoji || null, priority || 0]
     );
@@ -304,7 +314,7 @@ app.put("/api/categories/:id", authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       "UPDATE categories SET name = ?, emoji = ?, priority = ? WHERE id = ?",
       [name, emoji || null, priority || 0, categoryId]
     );
@@ -327,7 +337,7 @@ app.put("/api/categories/:id", authenticateAdmin, async (req, res) => {
 app.delete("/api/categories/:id", authenticateAdmin, async (req, res) => {
   const categoryId = req.params.id;
   try {
-    const [result] = await db.promise().query("DELETE FROM categories WHERE id = ?", [categoryId]);
+    const [result] = await db.query("DELETE FROM categories WHERE id = ?", [categoryId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Категория не найдена" });
     }
@@ -337,48 +347,12 @@ app.delete("/api/categories/:id", authenticateAdmin, async (req, res) => {
     res.status(500).json({ error: "Ошибка при удалении категории" });
   }
 });
-// Публичный маршрут для получения продуктов филиала
-app.get("/api/public/branches/:branchId/products", async (req, res) => {
-  const branchId = req.params.branchId;
-  try {
-    const [results] = await db.promise().query(
-      `
-      SELECT 
-        p.id,
-        p.name,
-        p.description,
-        p.category_id,
-        c.name as category,
-        p.sub_category,
-        p.image_url,
-        bp.price_small,
-        bp.price_medium,
-        bp.price_large,
-        bp.price,
-        bp.status
-      FROM 
-        products p
-      JOIN 
-        categories c ON p.category_id = c.id
-      JOIN 
-        branch_products bp ON p.id = bp.product_id
-      WHERE 
-        bp.branch_id = ? AND bp.status = 'active'
-      `,
-      [branchId]
-    );
-    res.json(results);
-  } catch (err) {
-    console.error("Ошибка при запросе данных (публичный маршрут):", err.message);
-    res.status(500).json({ error: "Ошибка при получении продуктов" });
-  }
-});
 
-// Оставляем существующий маршрут для админки
+// Получение всех продуктов для конкретного филиала (админский маршрут)
 app.get("/api/branches/:branchId/products", authenticateAdmin, async (req, res) => {
   const branchId = req.params.branchId;
   try {
-    const [results] = await db.promise().query(
+    const [results] = await db.query(
       `
       SELECT 
         p.id,
@@ -414,50 +388,32 @@ app.get("/api/branches/:branchId/products", authenticateAdmin, async (req, res) 
 // Добавление нового продукта для филиала
 app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("image"), async (req, res) => {
   const branchId = req.params.branchId;
-  const {
-    name,
-    description,
-    category,
-    subCategory,
-    price,
-    priceSmall,
-    priceMedium,
-    priceLarge,
-  } = req.body;
+  const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : req.body.imageUrl;
 
   if (!name || !category) {
     return res.status(400).json({ error: "Поля name и category обязательны" });
   }
   if (!imageUrl) {
-    return res
-      .status(400)
-      .json({ error: "Изображение обязательно для нового продукта" });
+    return res.status(400).json({ error: "Изображение обязательно для нового продукта" });
   }
 
   try {
-    const [categoryResult] = await db.promise().query("SELECT id FROM categories WHERE name = ?", [category]);
+    const [categoryResult] = await db.query("SELECT id FROM categories WHERE name = ?", [category]);
     if (categoryResult.length === 0) {
       return res.status(400).json({ error: "Категория не найдена" });
     }
     const categoryId = categoryResult[0].id;
 
-    const [productResult] = await db.promise().query(
+    const [productResult] = await db.query(
       "INSERT INTO products (name, description, category_id, sub_category, image_url) VALUES (?, ?, ?, ?, ?)",
       [name, description || null, categoryId, subCategory || null, imageUrl]
     );
     const productId = productResult.insertId;
 
-    await db.promise().query(
+    await db.query(
       "INSERT INTO branch_products (branch_id, product_id, price_small, price_medium, price_large, price) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        branchId,
-        productId,
-        priceSmall || null,
-        priceMedium || null,
-        priceLarge || null,
-        price || null,
-      ]
+      [branchId, productId, priceSmall || null, priceMedium || null, priceLarge || null, price || null]
     );
 
     res.status(201).json({ message: "Продукт успешно добавлен", productId });
@@ -471,16 +427,7 @@ app.post("/api/branches/:branchId/products", authenticateAdmin, upload.single("i
 app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single("image"), async (req, res) => {
   const branchId = req.params.branchId;
   const productId = req.params.id;
-  const {
-    name,
-    description,
-    category,
-    subCategory,
-    price,
-    priceSmall,
-    priceMedium,
-    priceLarge,
-  } = req.body;
+  const { name, description, category, subCategory, price, priceSmall, priceMedium, priceLarge } = req.body;
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : req.body.imageUrl;
 
   if (!name || !category) {
@@ -488,13 +435,13 @@ app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single
   }
 
   try {
-    const [categoryResult] = await db.promise().query("SELECT id FROM categories WHERE name = ?", [category]);
+    const [categoryResult] = await db.query("SELECT id FROM categories WHERE name = ?", [category]);
     if (categoryResult.length === 0) {
       return res.status(400).json({ error: "Категория не найдена" });
     }
     const categoryId = categoryResult[0].id;
 
-    const [productResult] = await db.promise().query(
+    const [productResult] = await db.query(
       `
       UPDATE products 
       SET name = ?, description = ?, category_id = ?, sub_category = ?, image_url = COALESCE(?, image_url)
@@ -506,7 +453,7 @@ app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single
       return res.status(404).json({ error: "Продукт не найден" });
     }
 
-    await db.promise().query(
+    await db.query(
       `
       UPDATE branch_products 
       SET price_small = ?, price_medium = ?, price_large = ?, price = ?
@@ -528,13 +475,13 @@ app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, async (req
   const productId = req.params.id;
 
   try {
-    await db.promise().query("DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?", [branchId, productId]);
+    await db.query("DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?", [branchId, productId]);
 
-    const [countResult] = await db.promise().query("SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?", [productId]);
+    const [countResult] = await db.query("SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?", [productId]);
     const count = countResult[0].count;
 
     if (count === 0) {
-      await db.promise().query("DELETE FROM products WHERE id = ?", [productId]);
+      await db.query("DELETE FROM products WHERE id = ?", [productId]);
       res.json({ message: "Продукт успешно удалён" });
     } else {
       res.json({ message: "Продукт удалён из филиала" });
@@ -549,22 +496,18 @@ app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, async (req
 app.post("/api/admin-login", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
-    return res
-      .status(400)
-      .json({ message: "Необходимо указать имя пользователя и пароль" });
+    return res.status(400).json({ message: "Необходимо указать имя пользователя и пароль" });
   }
 
   try {
-    const [results] = await db.promise().query("SELECT * FROM users WHERE username = ?", [username]);
+    const [results] = await db.query("SELECT * FROM users WHERE username = ?", [username]);
     if (results.length === 0) {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const [result] = await db.promise().query(
+      const [result] = await db.query(
         "INSERT INTO users (username, password) VALUES (?, ?)",
         [username, hashedPassword]
       );
-      const token = jwt.sign({ userId: result.insertId, username }, JWT_SECRET, {
-        expiresIn: "1h",
-      });
+      const token = jwt.sign({ userId: result.insertId, username }, JWT_SECRET, { expiresIn: "1h" });
       res.status(201).json({
         message: "Новый администратор создан",
         token,
@@ -578,9 +521,7 @@ app.post("/api/admin-login", async (req, res) => {
       if (!validPassword) {
         return res.status(401).json({ message: "Неверный пароль" });
       }
-      const token = jwt.sign({ userId: admin.id, username }, JWT_SECRET, {
-        expiresIn: "1h",
-      });
+      const token = jwt.sign({ userId: admin.id, username }, JWT_SECRET, { expiresIn: "1h" });
       res.json({ message: "Вход выполнен успешно", token, userId: admin.id, username });
     }
   } catch (err) {
@@ -639,20 +580,15 @@ app.post("/api/register", async (req, res) => {
   }
 
   try {
-    const [existingUser] = await db.promise().query("SELECT * FROM userskg WHERE email = ? OR phone = ?", [
-      email,
-      phone,
-    ]);
+    const [existingUser] = await db.query("SELECT * FROM userskg WHERE email = ? OR phone = ?", [email, phone]);
     if (existingUser.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "Пользователь с таким email или телефоном уже существует" });
+      return res.status(400).json({ message: "Пользователь с таким email или телефоном уже существует" });
     }
 
     const confirmationCode = Math.floor(100000 + Math.random() * 900000);
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await db.promise().query(
+    await db.query(
       "INSERT INTO temp_users (first_name, last_name, phone, email, password_hash, confirmation_code) VALUES (?, ?, ?, ?, ?, ?)",
       [firstName, lastName, phone, email, hashedPassword, confirmationCode]
     );
@@ -686,22 +622,20 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/confirm-code", async (req, res) => {
   const { code } = req.body;
   try {
-    const [tempUser] = await db.promise().query("SELECT * FROM temp_users WHERE confirmation_code = ?", [
-      code,
-    ]);
+    const [tempUser] = await db.query("SELECT * FROM temp_users WHERE confirmation_code = ?", [code]);
     if (tempUser.length === 0) {
       return res.status(400).json({ message: "Неверный код подтверждения" });
     }
 
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       "INSERT INTO userskg (first_name, last_name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
       [tempUser[0].first_name, tempUser[0].last_name, tempUser[0].phone, tempUser[0].email, tempUser[0].password_hash]
     );
     const userId = result.insertId;
 
-    await db.promise().query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
+    await db.query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
     const token = jwt.sign({ user_id: userId }, JWT_SECRET, { expiresIn: "24h" });
-    await db.promise().query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
+    await db.query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
 
     res.status(200).json({ message: "Подтверждение успешно", token });
   } catch (error) {
@@ -718,7 +652,7 @@ app.post("/api/login", async (req, res) => {
   }
 
   try {
-    const [user] = await db.promise().query("SELECT * FROM userskg WHERE email = ?", [email]);
+    const [user] = await db.query("SELECT * FROM userskg WHERE email = ?", [email]);
     if (user.length === 0) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
@@ -729,7 +663,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = jwt.sign({ user_id: user[0].user_id }, JWT_SECRET, { expiresIn: "1h" });
-    await db.promise().query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user[0].user_id]);
+    await db.query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user[0].user_id]);
     res.json({ message: "Вход успешен", token });
   } catch (error) {
     console.error("Ошибка входа:", error);
@@ -746,7 +680,7 @@ app.get("/api/user", async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const [results] = await db.promise().query(
+    const [results] = await db.query(
       "SELECT user_id, first_name AS username, email, phone, balance FROM userskg WHERE user_id = ?",
       [decoded.user_id]
     );
@@ -763,7 +697,7 @@ app.get("/api/user", async (req, res) => {
 // Получение всех пользователей
 app.get("/api/users", authenticateAdmin, async (req, res) => {
   try {
-    const [results] = await db.promise().query("SELECT * FROM userskg");
+    const [results] = await db.query("SELECT * FROM userskg");
     res.json(results);
   } catch (err) {
     console.error("Ошибка при запросе пользователей:", err);
@@ -779,7 +713,7 @@ app.delete("/api/users/:user_id", authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const [result] = await db.promise().query("DELETE FROM userskg WHERE user_id = ?", [userId]);
+    const [result] = await db.query("DELETE FROM userskg WHERE user_id = ?", [userId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
@@ -808,25 +742,25 @@ app.post("/api/users/:user_id/promo", authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const [user] = await db.promise().query("SELECT email FROM userskg WHERE user_id = ?", [userId]);
+    const [user] = await db.query("SELECT email FROM userskg WHERE user_id = ?", [userId]);
     if (user.length === 0) {
       return res.status(404).json({ message: "Пользователь не найден" });
     }
 
     const promoCode = generatePromoCode();
     const now = new Date();
-    await db.promise().query(
+    await db.query(
       "UPDATE userskg SET promo_code = ?, promo_code_created_at = ?, discount = ? WHERE user_id = ?",
       [promoCode, now, discount, userId]
     );
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: { user: "vorlodgamess@gmail.com", pass: "hpmjnrjmaedrylve" },
+      auth: { user: process.env.EMAIL_USER || "vorlodgamess@gmail.com", pass: process.env.EMAIL_PASS || "hpmjnrjmaedrylve" },
     });
 
     await transporter.sendMail({
-      from: "vorlodgamess@gmail.com",
+      from: `"Boodai Pizza" <${process.env.EMAIL_USER || "vorlodgamess@gmail.com"}>`,
       to: user[0].email,
       subject: "Ваш новый промокод от Boodya Pizza",
       html: `
@@ -854,7 +788,7 @@ app.post("/api/validate-promo", async (req, res) => {
   }
 
   try {
-    const [results] = await db.promise().query("SELECT * FROM userskg WHERE promo_code = ?", [promoCode]);
+    const [results] = await db.query("SELECT * FROM userskg WHERE promo_code = ?", [promoCode]);
     if (results.length === 0) {
       return res.status(400).json({ message: "Неверный промокод" });
     }
@@ -874,6 +808,6 @@ app.post("/api/validate-promo", async (req, res) => {
 });
 
 // Запуск сервера
-app.listen(5000, () => {
-  console.log("Сервер запущен на порту 5000");
+app.listen(PORT, () => {
+  console.log(`Сервер запущен на порту ${PORT}`);
 });
