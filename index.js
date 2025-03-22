@@ -59,7 +59,7 @@ app.use(cors({
 }));
 
 app.use(bodyParser.json());
-app.use('/uploads', express.static('uploads')); // Раздача статических файлов
+app.use('/uploads', express.static('uploads'));
 
 // Настройка Multer для загрузки файлов
 const storage = multer.diskStorage({
@@ -111,10 +111,7 @@ const db = mysql.createPool({
       logger.info("Администратор уже существует");
     }
   } catch (err) {
-    logger.error("Ошибка подключения к базе данных:", {
-      message: err.message,
-      stack: err.stack,
-    });
+    logger.error("Ошибка подключения к базе данных:", err.message);
     process.exit(1);
   }
 })();
@@ -505,7 +502,7 @@ app.post("/api/confirm-code", async (req, res) => {
     );
     const userId = result.insertId;
     await db.query("DELETE FROM temp_users WHERE confirmation_code = ?", [code]);
-    const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "24h" });
+    const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "1h" }); // Установлено ограничение в 1 час
     await db.query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, userId]);
     logger.info(`Пользователь подтверждён: ${userId}`);
     res.status(200).json({ message: "Подтверждение успешно", token, userId });
@@ -530,7 +527,7 @@ app.post("/api/login", async (req, res) => {
     if (!isPasswordMatch) {
       return res.status(400).json({ message: "Неверный пароль" });
     }
-    const token = jwt.sign({ userId: user[0].user_id }, JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ userId: user[0].user_id }, JWT_SECRET, { expiresIn: "1h" }); // Установлено ограничение в 1 час
     await db.query("UPDATE userskg SET token = ? WHERE user_id = ?", [token, user[0].user_id]);
     logger.info(`Пользователь вошёл: ${email}`);
     res.json({ message: "Вход успешен", token, userId: user[0].user_id });
@@ -556,7 +553,7 @@ app.post("/api/admin-login", async (req, res) => {
     if (!validPassword) {
       return res.status(401).json({ message: "Неверный пароль" });
     }
-    const token = jwt.sign({ userId: admin.id }, JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ userId: admin.id }, JWT_SECRET, { expiresIn: "1h" }); // Установлено ограничение в 1 час
     logger.info(`Администратор вошёл: ${username}`);
     res.json({ message: "Вход выполнен успешно", token, userId: admin.id });
   } catch (error) {
