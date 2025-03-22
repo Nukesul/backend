@@ -1,15 +1,15 @@
 const express = require("express");
-const mysql = require("mysql2/promise"); // Используем promise-версию для упрощения
+const mysql = require("mysql2/promise");
 const multer = require("multer");
 const path = require("path");
 const axios = require("axios");
 const bcrypt = require("bcryptjs");
 const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
-const fs = require("fs").promises; // Используем promise-версию fs
+const fs = require("fs").promises;
 const crypto = require("crypto");
 const cors = require("cors");
-const winston = require("winston"); // Для логирования
+const winston = require("winston");
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 
@@ -30,14 +30,31 @@ const logger = winston.createLogger({
 });
 
 // Переменные окружения
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const JWT_SECRET = process.env.JWT_SECRET || "your_default_secret_key";
+
+// Проверка обязательных переменных окружения
+const requiredEnvVars = [
+  "DB_HOST",
+  "DB_USER",
+  "DB_PASSWORD",
+  "DB_NAME",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_CHAT_ID",
+  "EMAIL_USER",
+  "EMAIL_PASS",
+];
+const missingEnvVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  logger.error(`Отсутствуют обязательные переменные окружения: ${missingEnvVars.join(", ")}`);
+  process.exit(1);
+}
 
 // CORS настройки
 app.use(
   cors({
-    origin: ["https://boodaikg.com", "http://localhost:3000"], // Разрешаем локальную разработку
+    origin: ["https://boodaikg.com", "http://localhost:3000"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
@@ -53,16 +70,17 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Создание папки uploads, если она не существует
+// Создание папки uploads
 (async () => {
   try {
     await fs.mkdir("uploads", { recursive: true });
+    logger.info("Папка uploads создана или уже существует");
   } catch (err) {
     logger.error("Ошибка создания папки uploads:", err.message);
   }
 })();
 
-// Настройка базы данных с пулом соединений
+// Настройка базы данных
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -74,7 +92,7 @@ const db = mysql.createPool({
   connectTimeout: 30000,
 });
 
-// Проверяем подключение
+// Проверка подключения к базе данных
 (async () => {
   try {
     const connection = await db.getConnection();
@@ -496,7 +514,6 @@ app.put("/api/branches/:branchId/products/:id", authenticateAdmin, upload.single
     }
     const categoryId = categoryResult[0].id;
 
-    // Если загружено новое изображение, удаляем старое
     if (req.file) {
       const [product] = await db.query("SELECT image_url FROM products WHERE id = ?", [productId]);
       if (product.length > 0 && product[0].image_url) {
@@ -546,15 +563,12 @@ app.delete("/api/branches/:branchId/products/:id", authenticateAdmin, async (req
   const productId = req.params.id;
 
   try {
-    // Удаляем связь продукта с филиалом
     await db.query("DELETE FROM branch_products WHERE branch_id = ? AND product_id = ?", [branchId, productId]);
 
-    // Проверяем, есть ли продукт в других филиалах
     const [countResult] = await db.query("SELECT COUNT(*) as count FROM branch_products WHERE product_id = ?", [productId]);
     const count = countResult[0].count;
 
     if (count === 0) {
-      // Если продукт больше нигде не используется, удаляем его и его изображение
       const [product] = await db.query("SELECT image_url FROM products WHERE id = ?", [productId]);
       if (product.length > 0 && product[0].image_url) {
         const imagePath = path.join(__dirname, product[0].image_url);
@@ -926,6 +940,12 @@ app.post("/api/validate-promo", async (req, res) => {
 
 // Запуск сервера
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   logger.info(`Сервер запущен на порту ${PORT}`);
+});
+
+// Обработка ошибок при запуске
+app.on("error", (err) => {
+  logger.error("Ошибка при запуске сервера:", err.message);
+  process.exit(1);
 });
