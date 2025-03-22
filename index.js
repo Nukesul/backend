@@ -126,7 +126,13 @@ const db = mysql.createPool({
       logger.info("Администратор уже существует");
     }
   } catch (err) {
-    logger.error("Ошибка подключения к базе данных:", err.message);
+    logger.error("Ошибка подключения к базе данных:", {
+      message: err.message,
+      stack: err.stack,
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      database: process.env.DB_NAME,
+    });
     process.exit(1);
   }
 })();
@@ -160,6 +166,12 @@ const authenticateAdmin = async (req, res, next) => {
 app.get("/", (req, res) => {
   logger.info("Запрос к базовому маршруту");
   res.send("Сервер работает!");
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  logger.info("Health check requested");
+  res.status(200).json({ status: "OK", message: "Server is running" });
 });
 
 // Публичный маршрут для получения всех филиалов
